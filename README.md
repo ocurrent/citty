@@ -21,6 +21,6 @@ For now, Citty assumes that the capability is stored in `~/.ocaml-ci.cap`.
 ### 3. Run!
 
 ```bash
-make
+make run
 # dune exec ./src/main.bc
 ```
