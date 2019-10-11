@@ -361,38 +361,70 @@ let select_prev list =
   in
   seek list
 
-let show_refs () =
+let show_repo repo =
+  Client.Repo.refs repo >>= function
+  | Ok refs ->
+    let refs =
+      refs |> Client.Ref_map.to_seq |> Seq.map (show_ref repo) |> List.of_seq
+    in
+    Lwd_utils.pack Ui.pack_y (List.map snd refs)
+    |> Lwd.map (Ui.focus_area (Time.next ()) {
+        Ui. action = begin fun direct key ->
+          match direct, key with
+          | `Direct, (`Arrow `Up, []) ->
+            select_prev refs; `Handled
+          | `Direct, (`Arrow `Down, []) ->
+            select_next refs; `Handled
+          | _ -> `Unhandled
+        end;
+        Ui.status = fun _ _ -> ();
+      })
+    |> Lwd.set middle_pane;
+    Lwt.return_unit
+  | Error (`Capnp e) ->
+    Lwd.pure (W.fmt "%a" Capnp_rpc.Error.pp e)
+    |> Lwd.set middle_pane;
+    Lwt.return_unit
+
+let show_repos () =
   let vat = Capnp_rpc_unix.client_only_vat () in
   match import_ci_ref ~vat None with
   | Error _ as e -> Lwt.return e
   | Ok sr ->
     let host = Uri.host_with_default (Capnp_rpc_unix.Vat.export vat sr) in
-    C.Sturdy_ref.connect_exn sr >>= fun ci ->
     Lwd.set header (Lwd.pure (W.string ~attr:Notty.A.(fg green) host));
-    let owner, name = "mirage", "irmin" in
-    let org = Client.CI.org ci owner in
-    let repo = Client.Org.repo org name in
-    Lwt_result.bind (Client.Repo.refs repo) @@ fun refs ->
-    let refs =
-      refs |> Client.Ref_map.to_seq |> Seq.map (show_ref repo) |> List.of_seq
-    in
-    let refs_ui =
-      Lwd_utils.pack Ui.pack_y (List.map snd refs) |>
-      Lwd.map (Ui.focus_area (Time.next ()) {
-          Ui. action = begin fun direct key ->
-            match direct, key with
-            | `Direct, (`Arrow `Up, []) ->
-              select_prev refs; `Handled
-            | `Direct, (`Arrow `Down, []) ->
-              select_next refs; `Handled
-            | _ -> `Unhandled
-          end;
-          Ui.status = fun _ _ -> ();
-        })
-    in
-    Lwd.set middle_pane refs_ui;
-    Nottui_lwt.run @@ ui >>= fun () ->
-    Lwt.return_ok ()
+    C.Sturdy_ref.connect_exn sr >>= fun ci ->
+    Client.CI.orgs ci >>= function
+    | Error _ as err -> Lwt.return err
+    | Ok orgs ->
+      Lwt_list.map_s
+        (fun x -> x)
+        (List.map (fun org ->
+             let handle = Client.CI.org ci org in
+             Lwt_result.map
+               (fun repos ->
+                  repos |>
+                  List.map (fun repo -> ((org, repo),
+                                         Client.Org.repo handle repo))
+               ) (Client.Org.repos handle)
+           ) orgs)
+      >>= fun repos ->
+      let render = function
+        | Ok repos ->
+          List.map (fun ((org, repo), handle) ->
+                 W.printf "%s/%s" org repo
+                 |> Ui.mouse_area (fun ~x:_ ~y:_ -> function
+                     | `Left ->
+                       Lwt.async (fun () -> show_repo handle);
+                       `Handled
+                     | _ -> `Unhandled
+                   )
+               ) repos
+        | Error (`Capnp e) -> [W.fmt "%a" Capnp_rpc.Error.pp e]
+      in
+      Lwd.set left_pane
+        (Lwd.pure (Lwd_utils.pure_pack Ui.pack_y (List.concat (List.map render repos))));
+      Lwt.return_ok ()
 
 (*| Some (`Ref _target) ->
       (*with_ref (Client.Repo.job_of_ref repo target) @@ fun _ ->*)
@@ -402,10 +434,14 @@ let show_refs () =
       Lwt.return (Lwd.return (W.string "Commit hash"))*)
 
 let main () =
-  Lwt_main.run (show_refs () >|= function
-    | Ok () -> ()
-    | Error (`Capnp err) -> Format.eprintf "%a" Capnp_rpc.Error.pp err
-    | Error (`Msg msg) -> Format.eprintf "Error: %S" msg
+  Lwt_main.run (show_repos () >>= function
+    | Ok () -> Nottui_lwt.run ui
+    | Error (`Capnp err) ->
+      Format.eprintf "%a" Capnp_rpc.Error.pp err;
+      Lwt.return_unit
+    | Error (`Msg msg) ->
+      Format.eprintf "Error: %S" msg;
+      Lwt.return_unit
     )
 
 let () = main ()
