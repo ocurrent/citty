@@ -1,0 +1,26 @@
+# A WIP terminal UI for OCaml-ci
+
+### 1. Clone the project 
+
+```bash
+git clone --recursive https://github.com/ocaml-ci/citty.git
+```
+
+Note: if you missed the `--recursive` flag, run `git submodule init`
+
+### 2. Install dependencies
+
+```bash
+opam install lwt notty
+```
+
+### 2. Install a capability file
+
+For now, Citty assumes that the capability is stored in `~/.ocaml-ci.cap`.
+
+### 3. Run!
+
+```bash
+make
+# dune exec ./src/main.bc
+```

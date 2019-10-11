@@ -1,0 +1,8 @@
+(executable
+ (name main)
+ (libraries 
+  ocaml-ci-api
+  current_rpc
+  capnp-rpc-unix
+  lwd 
+  nottui nottui-lwt nottui-widgets))
