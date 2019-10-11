@@ -24,3 +24,7 @@ For now, Citty assumes that the capability is stored in `~/.ocaml-ci.cap`.
 make run
 # dune exec ./src/main.bc
 ```
+### 4. Quit it
+
+`(alt,meta,...)-q`, or just kill the process :-).
+TODO: add a clean way to exit.
