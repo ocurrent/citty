@@ -122,7 +122,8 @@ let reduce_string_table table width =
             | [] -> assert false
             | suffix :: rest ->
                 let ui =
-                  rest |> List.rev_map wrap_line
+                  rest
+                  |> List.rev_map wrap_line
                   |> Lwd_utils.pure_pack Ui.pack_y
                 in
                 (prefix, Some (ui, suffix)) ))
@@ -252,7 +253,8 @@ let rec show_status var job =
                                 let dy = y' - y in
                                 let position =
                                   float st.position
-                                  +. float dy /. float st.W.visible
+                                  +. float dy
+                                     /. float st.W.visible
                                      *. float st.W.total
                                 in
                                 let position =
