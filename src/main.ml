@@ -19,7 +19,7 @@ let ui =
     Lwd.(v |> get |> join |> map (Ui.resize ~w:0 ?sw))
   in
   let spacer =
-    Ui.empty |> Ui.resize ~w:1 ~bg:Notty.A.(bg (gray 1)) |> Lwd.pure
+    Ui.empty |> Ui.resize ~w:1 ~sh:1 ~bg:Notty.A.(bg (gray 1)) |> Lwd.pure
   in
   Lwd_utils.pack Ui.pack_y
     [
@@ -189,6 +189,11 @@ let rec show_status var job =
      let update_if_changed v x = if Lwd.peek v <> x then Lwd.set v x in
      let scroll_state = Lwd.var W.default_scroll_state in
      let set_scroll reason st =
+       (*Printf.eprintf "scrollstate: { position = %d/%d; size = %d/%d }\n"
+         st.W.position
+         st.W.bound
+         st.W.visible
+         st.W.total;*)
        let st =
          if
            reason = `Content
@@ -267,13 +272,14 @@ let rec show_status var job =
      let result =
        Lwd_utils.pack Ui.pack_y
          [
-           Lwd.pure (W.string text);
+           Lwd.pure (text |> W.string |> Ui.resize ~w:0 ~sw:1);
            Lwd_utils.pack Ui.pack_x
              [
                Lwd.get buttons;
                Lwd.pure
                  (Ui.resize ~h:1 ~sw:1 ~bg:Notty.A.(bg (gray 1)) Ui.empty);
-             ];
+             ]
+           |> Lwd.map (Ui.resize ~w:0 ~sw:1);
            Lwd_utils.pack Ui.pack_x
              [
                Lwd_utils.pack Ui.pack_y
@@ -281,9 +287,23 @@ let rec show_status var job =
                |> W.vscroll_area ~state:(Lwd.get scroll_state)
                     ~change:set_scroll
                |> Lwd.map (fun ui ->
-                      ui |> Ui.resize ~w:0 ~sw:1
-                      |> Ui.size_sensor (fun w _ -> update_if_changed width w));
-               scrollbar;
+                      ui
+                      |> Ui.resize ~w:0 ~sw:1 ~h:0 ~sh:1
+                      |> Ui.size_sensor (fun w _ -> update_if_changed width w)
+                      |> Ui.mouse_area (fun ~x:_ ~y:y0 ->
+                           function
+                           | `Left ->
+                               let st = Lwd.peek scroll_state in
+                               `Grab
+                                 ( (fun ~x:_ ~y:y1 ->
+                                     set_scroll `Change
+                                       {
+                                         st with
+                                         position = st.position + y0 - y1;
+                                       }),
+                                   fun ~x:_ ~y:_ -> () )
+                           | _ -> `Unhandled));
+               scrollbar |> Lwd.map (Ui.resize ~w:1 ~sw:0 ~h:0 ~sh:1);
              ];
          ]
      in
