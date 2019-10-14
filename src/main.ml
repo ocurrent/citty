@@ -340,13 +340,13 @@ let render_ref repo hash =
           (* FIXME: handle other jobs *)
           show_status (Client.Commit.job_of_variant commit job.variant))
 
-let prev_highlight = ref (Lwd.var false)
-
-let do_highlight (var, (repo, hash)) =
-  Lwd.set !prev_highlight false;
-  Lwd.set var true;
-  prev_highlight := var;
-  render_ref repo hash
+let do_ref_highlight =
+  let prev_highlight = ref (Lwd.var false) in
+  fun (var, (repo, hash)) ->
+    Lwd.set !prev_highlight false;
+    Lwd.set var true;
+    prev_highlight := var;
+    render_ref repo hash
 
 let show_ref repo (gref, hash) =
   let gref = fit_string gref 24 in
@@ -361,7 +361,7 @@ let show_ref repo (gref, hash) =
     |> Ui.mouse_area (fun ~x:_ ~y:_ ->
          function
          | `Left ->
-             do_highlight vhighlight;
+             do_ref_highlight vhighlight;
              `Handled
          | _ -> `Unhandled)
   in
@@ -371,18 +371,18 @@ let select_next list =
   let rec seek = function
     | [] -> false
     | ((x, _), _) :: (item, _) :: _ when Lwd.peek x ->
-        do_highlight item;
+        do_ref_highlight item;
         true
     | _ :: rest -> seek rest
   in
   if seek list then ()
-  else match list with (item, _) :: _ -> do_highlight item | [] -> ()
+  else match list with (item, _) :: _ -> do_ref_highlight item | [] -> ()
 
 let select_prev list =
   let rec seek = function
     | [] -> ()
-    | (item, _) :: ((y, _), _) :: _ when Lwd.peek y -> do_highlight item
-    | [ (item, _) ] -> do_highlight item
+    | (item, _) :: ((y, _), _) :: _ when Lwd.peek y -> do_ref_highlight item
+    | [ (item, _) ] -> do_ref_highlight item
     | _ :: rest -> seek rest
   in
   seek list
@@ -416,6 +416,13 @@ let show_repo repo =
       Lwt.return_unit
 
 let show_repos () =
+  let do_repo_highlight =
+    let prev_highlight = ref (Lwd.var false) in
+    fun var ->
+      Lwd.Infix.(!prev_highlight $= false);
+      Lwd.Infix.(var $= true);
+      prev_highlight := var
+  in
   let vat = Capnp_rpc_unix.client_only_vat () in
   match import_ci_ref ~vat None with
   | Error _ as e -> Lwt.return e
@@ -441,22 +448,27 @@ let show_repos () =
           >>= fun repos ->
           let render = function
             | Ok repos ->
+                let style hl =
+                  if hl then Notty.A.(st bold ++ st reverse) else Notty.A.empty
+                in
                 List.map
                   (fun ((org, repo), handle) ->
-                    W.printf "%s/%s" org repo
-                    |> Ui.mouse_area (fun ~x:_ ~y:_ ->
-                         function
-                         | `Left ->
-                             Lwt.async (fun () -> show_repo handle);
-                             `Handled
-                         | _ -> `Unhandled))
+                    let vhighlight = Lwd.var false in
+                    Lwd.map' (Lwd.get vhighlight) (fun highlight ->
+                        W.printf ~attr:(style highlight) "%s/%s" org repo
+                        |> Ui.mouse_area (fun ~x:_ ~y:_ ->
+                             function
+                             | `Left ->
+                                 do_repo_highlight vhighlight;
+                                 Lwt.async (fun () -> show_repo handle);
+                                 `Handled
+                             | _ -> `Unhandled)))
                   repos
-            | Error (`Capnp e) -> [ W.fmt "%a" Capnp_rpc.Error.pp e ]
+            | Error (`Capnp e) ->
+                [ Lwd.pure (W.fmt "%a" Capnp_rpc.Error.pp e) ]
           in
-          Lwd.set left_pane
-            (Lwd.pure
-               (Lwd_utils.pure_pack Ui.pack_y
-                  (List.concat (List.map render repos))));
+          List.map render repos |> List.concat |> Lwd_utils.pack Ui.pack_y
+          |> Lwd.set left_pane;
           Lwt.return_ok () )
 
 (*| Some (`Ref _target) ->
