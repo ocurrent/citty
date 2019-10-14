@@ -6,26 +6,30 @@ open Nottui_widgets
 
 let simple_edit x =
   let var = Lwd.var (x, 0) in
-  edit_field (Lwd.get var)
-    ~on_change:(Lwd.set var)
-    ~on_submit:ignore
+  edit_field (Lwd.get var) ~on_change:(Lwd.set var) ~on_submit:ignore
 
 let strict_table () =
   let columns = Lwd_table.make () in
   for colidx = 0 to 99 do
     let rows = Lwd_table.make () in
-    ignore @@ Lwd_table.append rows
-      ~set:(Lwd.return @@ string (Printf.sprintf "Column %d" colidx));
+    ignore
+    @@ Lwd_table.append rows
+         ~set:(Lwd.return @@ string (Printf.sprintf "Column %d" colidx));
     for rowidx = 0 to 99 do
-      ignore @@ Lwd_table.append rows
-        ~set:(simple_edit (Printf.sprintf "Test-%03d-%03d" colidx rowidx))
+      ignore
+      @@ Lwd_table.append rows
+           ~set:(simple_edit (Printf.sprintf "Test-%03d-%03d" colidx rowidx))
     done;
-    ignore @@ Lwd_table.append columns ~set:
-      (rows |> Lwd_table.reduce (Lwd_utils.lift_monoid Ui.pack_y) |> Lwd.join);
-    ignore @@ Lwd_table.append columns ~set:(Lwd.return (string " "));
+    ignore
+    @@ Lwd_table.append columns
+         ~set:
+           ( rows
+           |> Lwd_table.reduce (Lwd_utils.lift_monoid Ui.pack_y)
+           |> Lwd.join );
+    ignore @@ Lwd_table.append columns ~set:(Lwd.return (string " "))
   done;
-  scroll_area @@
-  Lwd.join (Lwd_table.reduce (Lwd_utils.lift_monoid Ui.pack_x) columns)
+  scroll_area
+  @@ Lwd.join (Lwd_table.reduce (Lwd_utils.lift_monoid Ui.pack_x) columns)
 
 (*let lazy_table t =
   let t = scroll_area t in
@@ -88,41 +92,46 @@ let strict_table () =
 (* Entry point *)
 
 let top = Lwd.var (Lwd.return Ui.empty)
+
 let bot = Lwd.var (Lwd.return Ui.empty)
 
 let quit = Lwd.var false
 
-let root = Lwd_utils.pack Ui.pack_y [
-    Lwd.join (Lwd.get top);
-    Lwd.join (Lwd.get bot)
-  ]
+let root =
+  Lwd_utils.pack Ui.pack_y [ Lwd.join (Lwd.get top); Lwd.join (Lwd.get bot) ]
 
 (*let () = Statmemprof_emacs.start 1E-4 30 5*)
 
 let () =
-  top $= Lwd_utils.pack Ui.pack_x [
-    main_menu_item "File" (fun () ->
-        Lwd_utils.pack Ui.pack_y [
-          Lwd.return @@ sub_entry "New" ignore;
-          Lwd.return @@ sub_entry "Open" ignore;
-          sub_menu_item "Recent" (fun () ->
-              Lwd_utils.pack Ui.pack_y [
-                Lwd.return @@ sub_entry "A" ignore;
-                Lwd.return @@ sub_entry "B" ignore;
-                Lwd.return @@ sub_entry "CD" ignore;
-              ]
-            );
-          Lwd.return @@ sub_entry "Quit" (fun () -> quit $= true);
-        ]
-      );
-    main_menu_item "View"
-      (fun _ -> bot $= Lwd.return (string "<View>"); Lwd.return Ui.empty);
-    main_menu_item "Edit"
-      (fun _ -> bot $= Lwd.return (string "<Edit>"); Lwd.return Ui.empty);
-  ];
-  bot $= Lwd_utils.pack Ui.pack_y [
-    simple_edit "Hello world";
-    v_pane (strict_table ()) (Lwd.return @@ string "B");
-    h_pane (Lwd.return (string "A")) (Lwd.return (string "B"));
-  ];
+  top
+  $= Lwd_utils.pack Ui.pack_x
+       [
+         main_menu_item "File" (fun () ->
+             Lwd_utils.pack Ui.pack_y
+               [
+                 Lwd.return @@ sub_entry "New" ignore;
+                 Lwd.return @@ sub_entry "Open" ignore;
+                 sub_menu_item "Recent" (fun () ->
+                     Lwd_utils.pack Ui.pack_y
+                       [
+                         Lwd.return @@ sub_entry "A" ignore;
+                         Lwd.return @@ sub_entry "B" ignore;
+                         Lwd.return @@ sub_entry "CD" ignore;
+                       ]);
+                 Lwd.return @@ sub_entry "Quit" (fun () -> quit $= true);
+               ]);
+         main_menu_item "View" (fun _ ->
+             bot $= Lwd.return (string "<View>");
+             Lwd.return Ui.empty);
+         main_menu_item "Edit" (fun _ ->
+             bot $= Lwd.return (string "<Edit>");
+             Lwd.return Ui.empty);
+       ];
+  bot
+  $= Lwd_utils.pack Ui.pack_y
+       [
+         simple_edit "Hello world";
+         v_pane (strict_table ()) (Lwd.return @@ string "B");
+         h_pane (Lwd.return (string "A")) (Lwd.return (string "B"));
+       ];
   Ui_loop.run ~tick_period:0.2 ~quit:(Lwd.get quit) root
