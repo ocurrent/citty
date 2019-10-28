@@ -2,7 +2,9 @@ all:
 	dune build ./src/main.bc
 
 run:
-	dune exec ./src/main.bc
+	dune build ./src/main.bc
+	dune exec ./src/main.bc 2> error.log
+	cat error.log
 
 test-stress:
 	dune exec ./lib/tests/stress.exe
