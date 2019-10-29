@@ -234,9 +234,9 @@ let show_repos pane =
           | Ok (_repo, handle) ->
             let pane = Pane.open_subview pane in
             Lwt.async (fun () ->
-                C.Capability.with_ref handle (fun handle ->
-                    show_repo handle pane
-                  )
+                (* C.Capability.with_ref handle (fun handle -> *)
+                show_repo handle pane
+                (* ) *)
               )
           | Error _ ->
             Pane.close_subview pane
