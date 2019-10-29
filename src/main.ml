@@ -4,6 +4,7 @@ open Nottui
 module C = Capnp_rpc_lwt
 module NW = Nottui_widgets
 module W = Widgets
+module Pane = W.Pane
 
 let header = Lwd.var (Lwd.pure Ui.empty)
 
@@ -24,6 +25,15 @@ let ui =
 
 let failwithf fmt = Printf.ksprintf failwith fmt
 
+let render_list_item highlight text =
+  let attr =
+    if highlight then
+      Notty.A.(st bold ++ fg lightblue ++ st reverse)
+    else
+      Notty.A.(st bold ++ fg lightblue)
+  in
+  NW.string ~attr text
+
 let import_ci_ref ~vat = function
   | Some url -> Capnp_rpc_unix.Vat.import vat url
   | None -> (
@@ -36,29 +46,6 @@ let import_ci_ref ~vat = function
         else
           failwithf "Default cap file %S not found!" path
     )
-
-let with_ref r fn =
-  Lwt.finalize
-    (fun () -> fn r)
-    (fun () ->
-      C.Capability.dec_ref r;
-      Lwt.return_unit)
-
-let show_log table job =
-  let add str = if str <> "" then Lwd_table.append' table str in
-  let rec aux start =
-    Current_rpc.Job.log ~start job >>= function
-    | Error _ as e ->
-        add "ERROR";
-        Lwt.return e
-    | Ok ("", _) ->
-        add "DONE";
-        Lwt.return_ok ()
-    | Ok (data, next) ->
-        add data;
-        aux next
-  in
-  aux 0L
 
 let rec interleave sep = function
   | [] | [_] as tail -> tail
@@ -105,6 +92,22 @@ let rec show_status var job =
      |> Lwd_utils.pure_pack Ui.pack_x
      |> Lwd.set buttons;
      let log_lines = Lwd_table.make () in
+     let show_log table job =
+       let add str = if str <> "" then Lwd_table.append' table str in
+       let rec aux start =
+         Current_rpc.Job.log ~start job >>= function
+         | Error _ as e ->
+           add "ERROR";
+           Lwt.return e
+         | Ok ("", _) ->
+           add "DONE";
+           Lwt.return_ok ()
+         | Ok (data, next) ->
+           add data;
+           aux next
+       in
+       aux 0L
+     in
      ignore (show_log log_lines job);
      let width = Lwd.var 0 in
      let update_if_changed v x = if Lwd.peek v <> x then Lwd.set v x in
@@ -174,8 +177,9 @@ let show_status job =
 let show_repo repo pane =
   Client.Repo.refs repo >>= function
   | Ok refs ->
-    let select next_pane (_, hash) =
-      next_pane (W.Pane (fun _ -> Lwd.pure (NW.string "...")));
+    let select (_, hash) =
+      let pane = Pane.open_subview pane in
+      Pane.set pane None (Lwd.pure (NW.string "..."));
       Lwt.async @@ fun () ->
       let commit = Client.Repo.commit_of_hash repo hash in
       Lwt.map (fun ui ->
@@ -185,7 +189,7 @@ let show_repo repo pane =
             | Error (`Capnp e) -> Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e)
             | Error `No_job -> Lwd.pure (NW.string "No jobs")
           in
-          next_pane (W.Pane (fun _ -> ui)))
+          Pane.set pane None ui)
       @@
       let open Lwt_result in
       Client.Commit.jobs commit >>= function
@@ -195,22 +199,18 @@ let show_repo repo pane =
         show_status (Client.Commit.job_of_variant commit job.variant)
     in
     let render (gref, hash) highlight =
-      let attr =
-        if highlight then
-          Notty.A.(st bold ++ fg lightblue ++ st reverse)
-        else
-          Notty.A.(st bold ++ fg lightblue)
-      in
-      NW.printf ~attr "%10s   #%s" (W.fit_string gref 24) (String.sub hash 0 6)
+      render_list_item highlight
+        (Printf.sprintf "%10s   #%s"
+           (W.fit_string gref 24) (String.sub hash 0 6))
     in
     let items = refs |> Client.Ref_map.to_seq |> List.of_seq in
-    pane (W.Pane (fun next ->
-        let ui, _dispatch = W.list_box ~items ~render ~select:(select next) in
-        ui));
+    let ui, dispatch = W.list_box ~items ~render ~select in
+    Pane.set pane (Some dispatch) ui;
     Lwt.return_unit
   | Error (`Capnp e) ->
-      pane (W.Pane (fun _ -> Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e)));
-      Lwt.return_unit
+    Pane.close_subview pane;
+    Pane.set pane None (Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e));
+    Lwt.return_unit
 
 let show_repos pane =
   let vat = Capnp_rpc_unix.client_only_vat () in
@@ -226,21 +226,20 @@ let show_repos pane =
         let render repo hl =
           match repo with
           | Ok ((org, repo), _handle) ->
-            let attr =
-              if hl then
-                Notty.A.(st bold ++ st reverse)
-              else
-                Notty.A.empty
-            in
-            NW.printf ~attr "%s/%s" org repo
+            render_list_item hl (Printf.sprintf "%s/%s" org repo)
           | Error (`Capnp e) ->
             NW.fmt ~attr:Notty.A.(fg red) "%a" Capnp_rpc.Error.pp e
         in
-        let select next_pane = function
+        let select = function
           | Ok (_repo, handle) ->
-            Lwt.async (fun () -> show_repo handle next_pane)
+            let pane = Pane.open_subview pane in
+            Lwt.async (fun () ->
+                C.Capability.with_ref handle (fun handle ->
+                    show_repo handle pane
+                  )
+              )
           | Error _ ->
-            next_pane (W.Pane (fun _ -> Lwd.pure Ui.empty))
+            Pane.close_subview pane
         in
         Lwt_list.map_s
           (fun x -> x)
@@ -257,28 +256,47 @@ let show_repos pane =
                       List.map handle_of repos)
                   (Client.Org.repos handle))
              orgs)
-          >>= fun items ->
-          let items = List.flatten items in
-          pane (W.Pane (fun next_pane -> fst (W.list_box ~items ~render ~select:(select next_pane))));
-          Lwt.return_ok () )
-
-(*| Some (`Ref _target) ->
-      (*with_ref (Client.Repo.job_of_ref repo target) @@ fun _ ->*)
-      Lwt.return (Lwd.return (NW.string "Ref target"))
-    | Some (`Commit _hash) ->
-      (*with_ref (Client.Repo.job_of_ref repo hash) @@ fun _ ->*)
-      Lwt.return (Lwd.return (NW.string "Commit hash"))*)
+        >>= fun items ->
+        let items = List.flatten items in
+        let ui, dispatch = W.list_box ~items ~render ~select in
+        Pane.set pane (Some dispatch) ui;
+        Lwt.return_ok ()
+    )
 
 let main () =
-  Lwt_main.run
-    (show_repos (fun pane -> Lwd.set body (W.pane_navigator pane))
-     >>= function
-     | Ok () -> Nottui_lwt.run ui
-     | Error (`Capnp err) ->
-       Format.eprintf "%a" Capnp_rpc.Error.pp err;
-       Lwt.return_unit
-     | Error (`Msg msg) ->
-       Format.eprintf "Error: %S" msg;
-       Lwt.return_unit)
+  let pane = Pane.make () in
+  let dispatch pos action =
+    match Pane.current_view pane pos with
+    | None -> `Unhandled
+    | Some view ->
+      match Pane.get view with
+      | None -> `Unhandled
+      | Some dispatch ->
+        dispatch action;
+        `Handled
+  in
+  Lwd.set body (
+    Pane.render pane
+    |> Lwd.map (Ui.focus_area (Time.next ()) {
+        action = (fun _ -> function
+            | `Arrow `Up, [] -> dispatch `Middle `Select_prev
+            | `Arrow `Down, [] -> dispatch `Middle `Select_next
+            | `Arrow `Left, [] -> dispatch `Left `Activate
+            | `Arrow `Right, [] -> dispatch `Right `Activate
+            | _ -> `Unhandled
+          );
+        status = (fun _ _ -> ());
+      })
+  );
+  Lwt_main.run (
+    show_repos (Pane.open_root pane) >>= function
+    | Ok () -> Nottui_lwt.run ui
+    | Error (`Capnp err) ->
+      Format.eprintf "%a" Capnp_rpc.Error.pp err;
+      Lwt.return_unit
+    | Error (`Msg msg) ->
+      Format.eprintf "Error: %S" msg;
+      Lwt.return_unit
+  )
 
 let () = main ()

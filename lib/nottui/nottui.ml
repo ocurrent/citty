@@ -214,8 +214,12 @@ struct
       { w = 0; sw = 0; h = 0; sh = 0; desc;
         focus_chain = ([], Time.origin); cache }
 
-  let event_filter f t =
+  let event_filter ?priority f t =
     let handlers, time = t.focus_chain in
+    let time = match priority with
+      | None -> time
+      | Some time -> time
+    in
     let focus_handler = {
       action = (fun _ key -> f (`Key key));
       status = (fun _ _ -> ());

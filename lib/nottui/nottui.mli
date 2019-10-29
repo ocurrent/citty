@@ -61,6 +61,7 @@ sig
     ?handler:mouse_handler -> ?origin:gravity -> ?direction:gravity ->
     t -> t
   val event_filter :
+    ?priority:Time.t ->
     ([`Key of Unescape.key | `Mouse of Unescape.mouse] -> may_handle) -> t -> t
 
   val join_x : t -> t -> t

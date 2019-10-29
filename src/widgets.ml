@@ -233,6 +233,16 @@ let list_box ~items ~render ~select =
       | _ :: rest -> seek rest
     in
     seek list
+  and activate list =
+    let rec seek = function
+      | [] -> false
+      | (item, _) :: _ when Lwd.peek (fst item) ->
+        select_item item;
+        true
+      | _ :: rest -> seek rest
+    in
+    if seek list then ()
+    else match list with (item, _) :: _ -> select_item item | [] -> ()
   in
   let show_item x =
     let item = (Lwd.var false, x) in
@@ -245,27 +255,11 @@ let list_box ~items ~render ~select =
     (item, ui)
   in
   let items = List.map show_item items in
+  let view = Lwd_utils.pack Ui.pack_y (List.map snd items) in
   let dispatch = function
     | `Select_prev -> select_prev items
     | `Select_next -> select_next items
-  in
-  let view =
-    Lwd.map'
-      (Lwd_utils.pack Ui.pack_y (List.map snd items))
-      (Ui.focus_area (Time.next ())
-         {
-           Ui.action =
-             (fun direct key ->
-                match (direct, key) with
-                | `Direct, (`Arrow `Up, []) ->
-                  dispatch `Select_prev;
-                  `Handled
-                | `Direct, (`Arrow `Down, []) ->
-                  dispatch `Select_next;
-                  `Handled
-                | _ -> `Unhandled);
-           Ui.status = (fun _ _ -> ());
-         })
+    | `Activate -> activate items
   in
   (view, dispatch)
 
@@ -275,15 +269,51 @@ let fit_string str len =
   else if len > len0 then str ^ String.make (len - len0) ' '
   else str
 
+module Pane : sig
+  type 'a t
+  type 'a view
 
-type pane = Pane of ((pane -> unit) -> ui Lwd.t)
+  val make : unit -> 'a t
+  val render : 'a t -> ui Lwd.t
+  val current_view : 'a t -> [`Left | `Middle | `Right] -> 'a view option
 
-let pane_navigator pane =
-  let empty = Lwd.pure Ui.empty in
-  let left_pane = Lwd.var empty in
-  let middle_pane = Lwd.var empty in
-  let right_pane = Lwd.var empty in
-  let view =
+  val open_root : 'a t -> 'a view
+  val open_subview : 'a view -> 'a view
+  val close_subview : 'a view -> unit
+  val set : 'a view -> 'a option -> ui Lwd.t -> unit
+  val get : 'a view -> 'a option
+end = struct
+  type 'a visual_pane = {
+    var: ui Lwd.t Lwd.var;
+    mutable view: 'a view option;
+  }
+  and 'a view = {
+    t: 'a t;
+    content: ui Lwd.t Lwd.var;
+    mutable tag : 'a option;
+    previous: 'a view option;
+  }
+  and 'a t = {
+    left: 'a visual_pane;
+    middle: 'a visual_pane;
+    right: 'a visual_pane;
+  }
+
+  let empty = Lwd.pure Ui.empty
+
+  let bind_pane visual view =
+    visual.view <- view;
+    Lwd.set visual.var (
+      match view with
+      | None -> empty
+      | Some view -> Lwd.join (Lwd.get view.content)
+    )
+
+  let make () =
+    let visual () = { var = Lwd.var empty; view = None } in
+    { left = visual (); middle = visual (); right = visual () }
+
+  let render t =
     let place_ui_var ?sw v =
       Lwd.(v |> get |> join |> map (Ui.resize ~w:0 ?sw))
     in
@@ -292,32 +322,47 @@ let pane_navigator pane =
     in
     Lwd_utils.pack Ui.pack_x
       [
-        place_ui_var left_pane ~sw:1;
+        place_ui_var t.left.var ~sw:1;
         spacer;
-        place_ui_var middle_pane ~sw:2;
+        place_ui_var t.middle.var ~sw:2;
         spacer;
-        place_ui_var right_pane ~sw:6;
+        place_ui_var t.right.var ~sw:6;
       ]
-  in
-  let rec render_pane backlinks (Pane pane) =
-    let content = Lwd.var empty in
-    let value = Lwd.get content |> Lwd.join in
-    let backlinks' = value :: backlinks in
-    Lwd.set content (pane (render_pane backlinks'));
-    begin match backlinks with
-      | [] ->
-        Lwd.set left_pane empty;
-        Lwd.set middle_pane value;
-        Lwd.set right_pane empty;
-      | [x] ->
-        Lwd.set left_pane empty;
-        Lwd.set middle_pane x;
-        Lwd.set right_pane value;
-      | x :: y :: _ ->
-        Lwd.set left_pane y;
-        Lwd.set middle_pane x;
-        Lwd.set right_pane value;
-    end;
-  in
-  render_pane [] pane;
-  view
+
+  let current_view t = function
+    | `Left   -> t.left.view
+    | `Middle -> t.middle.view
+    | `Right  -> t.right.view
+
+  let display view =
+    let left, middle, right = match view with
+      | { previous = None; _} as middle ->
+        None, middle, None
+      | { previous = Some ({previous; _} as middle); _} ->
+        previous, middle, Some view
+    in
+    bind_pane view.t.left left;
+    bind_pane view.t.middle (Some middle);
+    bind_pane view.t.right right
+
+  let mkview t previous = { t; content = Lwd.var empty; tag = None; previous }
+
+  let open_root t =
+    let view = mkview t None in
+    display view;
+    view
+
+  let open_subview v =
+    let view = mkview v.t (Some v) in
+    display view;
+    view
+
+  let close_subview v =
+    display v
+
+  let set view tag ui =
+    view.tag <- tag;
+    Lwd.set view.content ui
+
+  let get view = view.tag
+end
