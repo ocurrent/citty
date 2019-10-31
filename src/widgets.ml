@@ -16,8 +16,7 @@ let control_character_index str i =
 (* Typeset the strings stored in a table with a fixed width, wrapping
    characters at the end of the line. *)
 let word_wrap_string_table table width =
-  if width <= 0 then
-    Lwd.pure Ui.empty
+  if width <= 0 then Lwd.pure Ui.empty
   else
     (* Wrap at least around 8 characters *)
     let width = max 8 width in
@@ -45,20 +44,21 @@ let word_wrap_string_table table width =
           lines := ("↳" ^ String.sub str !pos (width - 2) ^ "↲") :: !lines;
           pos := !pos + (width - 2) )
       done;
+
       (* Produce an image for one visual line *)
       let render_line str = Ui.atom Notty.(I.string A.empty str) in
       match !lines with
       | [] ->
-        (* Nothing to split, render the full input *)
-        render_line str
+          (* Nothing to split, render the full input *)
+          render_line str
       | lines ->
-        (* Something was split:
+          (* Something was split:
            - append remaining characters
            - render each line
            - concatenate them vertically *)
-        ("↳" ^ String.sub str !pos (len - !pos)) :: lines
-        |> List.rev_map render_line
-        |> Lwd_utils.pure_pack Ui.pack_y
+          ("↳" ^ String.sub str !pos (len - !pos)) :: lines
+          |> List.rev_map render_line
+          |> Lwd_utils.pure_pack Ui.pack_y
     in
     (* Stack three images vertically *)
     let join3 a b c = Ui.join_y a (Ui.join_y b c) in
@@ -120,30 +120,27 @@ let word_wrap_string_table table width =
                   | None -> (ua, line)
                   | Some (ub, sb) -> (join3 ua (wrap_line line) ub, sb) ) ) )
       table
-    |>
-    (* After reducing the table, we produce the final UI, interpreting
+    |> (* After reducing the table, we produce the final UI, interpreting
        unterminated prefix and suffix has line of their own. *)
-    Lwd.map (function
-        | pa, None -> wrap_line pa
-        | pa, Some (ub, sb) -> join3 (wrap_line pa) ub (wrap_line sb))
+       Lwd.map (function
+         | pa, None -> wrap_line pa
+         | pa, Some (ub, sb) -> join3 (wrap_line pa) ub (wrap_line sb))
 
 (* Grab the mouse and repeat an event until button is released *)
 let grab_and_repeat f =
   let stop = ref false in
   let rec step delay () =
     if not !stop then
-      Lwt.bind (f ()) @@ fun () ->
-      Lwt.bind (Lwt_unix.sleep delay) (step 0.025)
+      Lwt.bind (f ()) @@ fun () -> Lwt.bind (Lwt_unix.sleep delay) (step 0.025)
     else Lwt.return_unit
   in
   Lwt.async (step 0.4);
-  `Grab ((fun ~x:_ ~y:_ -> ()),
-         fun ~x:_ ~y:_ -> stop := true)
+  `Grab ((fun ~x:_ ~y:_ -> ()), fun ~x:_ ~y:_ -> stop := true)
 
-let on_click f = fun ~x:_ ~y:_ -> function
+let on_click f ~x:_ ~y:_ = function
   | `Left ->
-    f ();
-    `Handled
+      f ();
+      `Handled
   | _ -> `Unhandled
 
 (* Render a vertical scroll representing a [Nottui_widgets.scroll_state].
@@ -153,8 +150,7 @@ let vertical_scrollbar ~set_scroll (st : Nottui_widgets.scroll_state) =
   let bar color h = Notty.(I.char A.(bg color) ' ' 1 h) in
   let gray = Notty.A.gray 1 in
   let lightgray = Notty.A.white in
-  if st.visible = 0 then
-    Ui.atom Notty.I.empty
+  if st.visible = 0 then Ui.atom Notty.I.empty
   else if st.total > st.visible then
     (* Compute size of the handle inside the bar *)
     let ratio = max 1 (st.visible * st.visible / st.total) in
@@ -164,63 +160,52 @@ let vertical_scrollbar ~set_scroll (st : Nottui_widgets.scroll_state) =
     (* React to mouse events on the scroll bar *)
     let mouse_handler ~x:_ ~y = function
       | `Left ->
-        if y < prefix then
-          let position = ref st.position in
-          grab_and_repeat (
-            fun () ->
-              position := max 0 (!position - (st.visible / 2));
-              set_scroll { st with position = !position };
-              Lwt.return_unit
-          )
-        else if y > prefix + ratio then
-          let position = ref st.position in
-          grab_and_repeat (
-            fun () ->
-              position := min st.bound (!position + (st.visible / 2));
-              set_scroll { st with position = !position };
-              Lwt.return_unit
-          )
-        else
-          `Grab (
-            (fun ~x:_ ~y:y' ->
-               let dy = y' - y in
-               let position =
-                 float st.position +.
-                 (float dy /. float st.visible *. float st.total)
-               in
-               let position =
-                 max 0 (min st.bound (int_of_float position))
-               in
-               set_scroll { st with position }
-            ),
-            (fun ~x:_ ~y:_ -> () )
-          )
+          if y < prefix then
+            let position = ref st.position in
+            grab_and_repeat (fun () ->
+                position := max 0 (!position - (st.visible / 2));
+                set_scroll { st with position = !position };
+                Lwt.return_unit)
+          else if y > prefix + ratio then
+            let position = ref st.position in
+            grab_and_repeat (fun () ->
+                position := min st.bound (!position + (st.visible / 2));
+                set_scroll { st with position = !position };
+                Lwt.return_unit)
+          else
+            `Grab
+              ( (fun ~x:_ ~y:y' ->
+                  let dy = y' - y in
+                  let position =
+                    float st.position
+                    +. (float dy /. float st.visible *. float st.total)
+                  in
+                  let position =
+                    max 0 (min st.bound (int_of_float position))
+                  in
+                  set_scroll { st with position }),
+                fun ~x:_ ~y:_ -> () )
       | _ -> `Unhandled
     in
-    Notty.I.vcat [
-      bar gray prefix;
-      bar lightgray ratio;
-      bar gray suffix;
-    ]
+    Notty.I.vcat [ bar gray prefix; bar lightgray ratio; bar gray suffix ]
     |> Ui.atom
     |> Ui.mouse_area mouse_handler
-  else
-    Ui.atom (bar gray st.visible)
+  else Ui.atom (bar gray st.visible)
 
 let list_box ~items ~render ~select =
   let prev_highlight = ref (Lwd.var false) in
   let select_item (var, item) =
-      Lwd.set !prev_highlight false;
-      Lwd.set var true;
-      prev_highlight := var;
-      select item
+    Lwd.set !prev_highlight false;
+    Lwd.set var true;
+    prev_highlight := var;
+    select item
   in
   let select_next list =
     let rec seek = function
       | [] -> false
       | ((x, _), _) :: (item, _) :: _ when Lwd.peek x ->
-        select_item item;
-        true
+          select_item item;
+          true
       | _ :: rest -> seek rest
     in
     if seek list then ()
@@ -237,8 +222,8 @@ let list_box ~items ~render ~select =
     let rec seek = function
       | [] -> false
       | (item, _) :: _ when Lwd.peek (fst item) ->
-        select_item item;
-        true
+          select_item item;
+          true
       | _ :: rest -> seek rest
     in
     if seek list then ()
@@ -271,43 +256,51 @@ let fit_string str len =
 
 module Pane : sig
   type 'a t
+
   type 'a view
 
   val make : unit -> 'a t
+
   val render : 'a t -> ui Lwd.t
-  val current_view : 'a t -> [`Left | `Middle | `Right] -> 'a view option
+
+  val current_view : 'a t -> [ `Left | `Middle | `Right ] -> 'a view option
 
   val open_root : 'a t -> 'a view
+
   val open_subview : 'a view -> 'a view
+
   val close_subview : 'a view -> unit
+
   val set : 'a view -> 'a option -> ui Lwd.t -> unit
+
   val get : 'a view -> 'a option
 end = struct
   type 'a visual_pane = {
-    var: ui Lwd.t Lwd.var;
-    mutable view: 'a view option;
+    var : ui Lwd.t Lwd.var;
+    mutable view : 'a view option;
   }
+
   and 'a view = {
-    t: 'a t;
-    content: ui Lwd.t Lwd.var;
+    t : 'a t;
+    content : ui Lwd.t Lwd.var;
     mutable tag : 'a option;
-    previous: 'a view option;
+    previous : 'a view option;
   }
+
   and 'a t = {
-    left: 'a visual_pane;
-    middle: 'a visual_pane;
-    right: 'a visual_pane;
+    left : 'a visual_pane;
+    middle : 'a visual_pane;
+    right : 'a visual_pane;
   }
 
   let empty = Lwd.pure Ui.empty
 
   let bind_pane visual view =
     visual.view <- view;
-    Lwd.set visual.var (
-      match view with
+    Lwd.set visual.var
+      ( match view with
       | None -> empty
-      | Some view -> Lwd.join (Lwd.get view.content)
-    )
+      | Some view -> Lwd.join (Lwd.get view.content) )
 
   let make () =
     let visual () = { var = Lwd.var empty; view = None } in
@@ -330,16 +323,16 @@ end = struct
       ]
 
   let current_view t = function
-    | `Left   -> t.left.view
+    | `Left -> t.left.view
     | `Middle -> t.middle.view
-    | `Right  -> t.right.view
+    | `Right -> t.right.view
 
   let display view =
-    let left, middle, right = match view with
-      | { previous = None; _} as middle ->
-        None, middle, None
-      | { previous = Some ({previous; _} as middle); _} ->
-        previous, middle, Some view
+    let left, middle, right =
+      match view with
+      | { previous = None; _ } as middle -> (None, middle, None)
+      | { previous = Some ({ previous; _ } as middle); _ } ->
+          (previous, middle, Some view)
     in
     bind_pane view.t.left left;
     bind_pane view.t.middle (Some middle);
@@ -357,8 +350,7 @@ end = struct
     display view;
     view
 
-  let close_subview v =
-    display v
+  let close_subview v = display v
 
   let set view tag ui =
     view.tag <- tag;
