@@ -264,10 +264,13 @@ let main () =
             {
               action =
                 (fun _ -> function
-                  | `Arrow `Up, [] -> dispatch `Middle `Select_prev
-                  | `Arrow `Down, [] -> dispatch `Middle `Select_next
-                  | `Arrow `Left, [] -> dispatch `Left `Activate
-                  | `Arrow `Right, [] -> dispatch `Right `Activate
+                  | (`Arrow `Up | `ASCII 'k'), [] ->
+                      dispatch `Middle `Select_prev
+                  | (`Arrow `Down | `ASCII 'j'), [] ->
+                      dispatch `Middle `Select_next
+                  | (`Arrow `Left | `ASCII 'h'), [] -> dispatch `Left `Activate
+                  | (`Arrow `Right | `ASCII 'l'), [] ->
+                      dispatch `Right `Activate
                   | _ -> `Unhandled);
               status = (fun _ _ -> ());
             }) );
