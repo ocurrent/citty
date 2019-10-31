@@ -271,6 +271,7 @@ let main () =
                   | (`Arrow `Left | `ASCII 'h'), [] -> dispatch `Left `Activate
                   | (`Arrow `Right | `ASCII 'l'), [] ->
                       dispatch `Right `Activate
+                  | (`Escape | `ASCII 'q'), [] -> exit 0
                   | _ -> `Unhandled);
               status = (fun _ _ -> ());
             }) );
