@@ -11,7 +11,8 @@ Note: if you missed the `--recursive` flag, run `git submodule init`
 ### 2. Install dependencies
 
 ```bash
-opam install dune lwt notty fpath mirage-flow-unix
+opam pin add --yes ocaml-ci/ocurrent/
+opam install --yes --deps-only ./citty.opam
 ```
 
 ### 2. Install a capability file
