@@ -2,3 +2,4 @@ _build/
 _opam/
 .merlin
 *.install
+error.log
