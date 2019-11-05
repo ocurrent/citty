@@ -28,6 +28,20 @@ let render_list_item highlight text =
   in
   NW.string ~attr text
 
+let render_state highlight (state : Raw.Reader.JobInfo.State.unnamed_union_t) =
+  let icon, color =
+    let open Notty.A in
+    match state with
+    | NotStarted -> ("[ ]", white)
+    | Passed -> ("[✓]", green)
+    | Failed _ -> ("[X]", red)
+    | Active -> ("[.]", yellow)
+    | Aborted -> ("[A]", lightred)
+    | Undefined _ -> ("[�]", white)
+  in
+  if highlight then NW.string ~attr:Notty.A.(fg color ++ st reverse) icon
+  else NW.string ~attr:Notty.A.(fg color) icon
+
 let import_ci_ref ~vat = function
   | Some url -> Capnp_rpc_unix.Vat.import vat url
   | None -> (
@@ -159,29 +173,43 @@ let show_status job =
   show_status result job
   |> Lwt_result.map (fun () -> Lwd.join (Lwd.get result))
 
+let show_jobs commit pane =
+  Client.Commit.jobs commit >|= function
+  | Ok items ->
+      let select Client.{ variant; _ } =
+        let pane = Pane.open_subview pane in
+        Pane.set pane None (Lwd.pure (NW.string "..."));
+        Lwt.async @@ fun () ->
+        Client.Commit.job_of_variant commit variant
+        |> show_status
+        >|= (function
+              | Ok ui -> ui
+              | Error (`Capnp e) -> Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e)
+              | Error `No_job -> Lwd.pure (NW.string "No jobs"))
+        >|= Pane.set pane None
+      and render Client.{ variant; outcome } highlight =
+        Ui.hcat
+          [
+            render_state highlight outcome;
+            Ui.atom (Notty.I.void 1 1);
+            render_list_item highlight variant;
+          ]
+      in
+      let ui, dispatch = W.list_box ~items ~render ~select in
+      Pane.set pane (Some dispatch) ui
+  | Error (`Capnp e) ->
+      Pane.close_subview pane;
+      Pane.set pane None (Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e))
+
 let show_repo repo pane =
   Client.Repo.refs repo >>= function
   | Ok refs ->
       let select (_, hash) =
         let pane = Pane.open_subview pane in
         Pane.set pane None (Lwd.pure (NW.string "..."));
-        Lwt.async @@ fun () ->
-        let commit = Client.Repo.commit_of_hash repo hash in
-        Lwt.map (fun ui ->
-            let ui =
-              match ui with
-              | Ok ui -> ui
-              | Error (`Capnp e) -> Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e)
-              | Error `No_job -> Lwd.pure (NW.string "No jobs")
-            in
-            Pane.set pane None ui)
-        @@
-        let open Lwt_result in
-        Client.Commit.jobs commit >>= function
-        | [] -> Lwt.return_error `No_job
-        | job :: _ ->
-            (* FIXME: handle other jobs *)
-            show_status (Client.Commit.job_of_variant commit job.variant)
+        Lwt.async (fun () ->
+            let commit = Client.Repo.commit_of_hash repo hash in
+            show_jobs commit pane)
       in
       let render (gref, hash) highlight =
         render_list_item highlight
