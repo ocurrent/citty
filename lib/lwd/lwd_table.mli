@@ -21,6 +21,8 @@ val remove : 'a row -> unit
 val reduce : 'a Lwd_utils.monoid -> 'a t -> 'a Lwd.t
 val map_reduce : ('a row -> 'a -> 'b) -> 'b Lwd_utils.monoid -> 'a t -> 'b Lwd.t
 
+val iter : ('a -> unit) -> 'a t -> unit
+
 module Infix : sig
   val ($<-) : 'a row -> 'a -> unit
 end

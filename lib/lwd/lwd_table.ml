@@ -505,6 +505,18 @@ let map_reduce mapper monoid source =
 
 let reduce monoid source = map_reduce (fun _ x -> x) monoid source
 
+let rec iter f = function
+  | Leaf -> ()
+  | Node t ->
+    iter f t.left;
+    begin match t.binding with
+      | Bound x -> f x.value
+      | Unbound -> ()
+    end;
+    iter f t.right
+  | Root t ->
+    iter f t.child
+
 module Infix = struct
   let ($<-) = set
 end
