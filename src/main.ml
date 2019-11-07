@@ -268,8 +268,7 @@ let main () =
                       dispatch `Middle `Select_prev
                   | (`Arrow `Down | `ASCII 'j'), [] ->
                       dispatch `Middle `Select_next
-                  | (`Arrow `Left | `ASCII 'h'), [] ->
-                      dispatch `Left `Activate
+                  | (`Arrow `Left | `ASCII 'h'), [] -> dispatch `Left `Activate
                   | (`Arrow `Right | `ASCII 'l'), [] ->
                       dispatch `Right `Activate
                   | (`Escape | `ASCII 'q'), [] -> exit 0
