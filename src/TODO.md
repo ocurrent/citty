@@ -12,15 +12,5 @@ should be cleaned up rather soon.
 UI
 ==
 
-1) _Organisation and repositories_.  mirage/irmin is hardcoded for now.  We
-need interfaces, programmatic and end-user ones, to list and select
-organisations and repositories.
-
-2) _Moving around with keyboard_.  Scrolling the log can be done with mouse for
-now.  Next: bind page-up, page-down, home, end, ...
-
 3) _Search and visualize log_.  Add searching ('/') and highlighting, detect
 some patterns (e.g. regular-expressions).
-
-4) _Shell out_.  The most basic interaction will be to send the log to a pager
-or editor.  Eventually, running custom shell commands might be useful too. 
