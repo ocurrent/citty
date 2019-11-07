@@ -143,6 +143,9 @@ let on_click f ~x:_ ~y:_ = function
       `Handled
   | _ -> `Unhandled
 
+let button attr text f =
+  Ui.mouse_area (on_click f) (Nottui_widgets.string ~attr text)
+
 (* Render a vertical scroll representing a [Nottui_widgets.scroll_state].
    The [set_scroll] function is called when the state should be updated to
    reflect a user interaction. *)

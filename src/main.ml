@@ -1,6 +1,7 @@
 open Lwt
 open Ocaml_ci_api
 open Nottui
+open Utils
 module C = Capnp_rpc_lwt
 module NW = Nottui_widgets
 module W = Widgets
@@ -13,13 +14,9 @@ let body = Lwd.var (Lwd.pure Ui.empty)
 let footer = Lwd.var (Lwd.pure Ui.empty)
 
 let ui =
-  let place_ui_var ?sw v =
-    Lwd.(v |> get |> join |> map (Ui.resize ~w:0 ?sw))
-  in
+  let place_ui_var v = Lwd.(v |> get |> join |> map (Ui.resize ~w:0)) in
   Lwd_utils.pack Ui.pack_y
     [ place_ui_var header; Lwd.get body |> Lwd.join; place_ui_var footer ]
-
-let failwithf fmt = Printf.ksprintf failwith fmt
 
 let render_list_item highlight text =
   let attr =
@@ -52,12 +49,6 @@ let import_ci_ref ~vat = function
           if Sys.file_exists path then Capnp_rpc_unix.Cap_file.load vat path
           else failwithf "Default cap file %S not found!" path )
 
-let rec interleave sep = function
-  | ([] | [ _ ]) as tail -> tail
-  | hd :: tail ->
-      let tail = interleave sep tail in
-      hd :: sep :: tail
-
 let rec show_status var job =
   Current_rpc.Job.status job
   |> Lwt_result.map
@@ -67,28 +58,24 @@ let rec show_status var job =
          description
      in
      let buttons = Lwd.var Ui.empty in
-     let rebuild_button =
-       if can_rebuild then
-         Ui.mouse_area
-           ( W.on_click @@ fun () ->
+     [
+       ( if can_rebuild then
+         Some
+           ( W.button Notty.A.(bg red) "[Rebuild]" @@ fun () ->
              Lwd.set buttons Ui.empty;
              ignore (show_status var (Current_rpc.Job.rebuild job)) )
-           (NW.string ~attr:Notty.A.(bg red) "[Rebuild]")
-       else Ui.empty
-     in
-     let cancel_button =
-       if can_cancel then
-         Ui.mouse_area
-           ( W.on_click @@ fun () ->
+       else None );
+       ( if can_cancel then
+         Some
+           ( W.button Notty.A.(bg blue) "[Cancel]" @@ fun () ->
              Lwd.set buttons Ui.empty;
              Lwt.async (fun () ->
                  Current_rpc.Job.cancel job >>= fun _ ->
                  ignore (show_status var job);
                  Lwt.return_unit) )
-           (NW.string ~attr:Notty.A.(bg blue) "[Cancel]")
-       else Ui.empty
-     in
-     [ rebuild_button; cancel_button ]
+       else None );
+     ]
+     |> filter_map (fun x -> x)
      |> interleave (Ui.atom (Notty.I.void 1 0))
      |> Lwd_utils.pure_pack Ui.pack_x
      |> Lwd.set buttons;
