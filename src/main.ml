@@ -49,7 +49,34 @@ let import_ci_ref ~vat = function
           if Sys.file_exists path then Capnp_rpc_unix.Cap_file.load vat path
           else failwithf "Default cap file %S not found!" path )
 
-let rec show_status var job =
+let open_in_editor var log_lines = function
+  | `Activate ->
+      let fname, oc = Filename.open_temp_file "citty" "log" in
+      Lwd_table.iter (output_string oc) log_lines;
+      close_out_noerr oc;
+      ( try
+          let safe_name = Filename.quote fname in
+          let candidates =
+            match Sys.getenv_opt "EDITOR" with
+            | Some x -> [ x ]
+            | None -> (
+                match Sys.getenv_opt "PAGER" with
+                | Some x -> [ x ]
+                | None -> [] )
+          in
+          let candidates = candidates @ [ "xdg-open"; "open" ] in
+          ignore
+            (List.exists
+               (fun bin ->
+                 Sys.command (Filename.quote bin ^ " " ^ safe_name) <> 127)
+               candidates)
+        with _ -> Sys.remove fname );
+
+      (* Change var to refresh view *)
+      Lwd.set var (Lwd.peek var)
+  | _ -> ()
+
+let rec show_status dispatch var job =
   Current_rpc.Job.status job
   |> Lwt_result.map
      @@ fun { Current_rpc.Job.id; description; can_cancel; can_rebuild } ->
@@ -63,7 +90,7 @@ let rec show_status var job =
          Some
            ( W.button Notty.A.(bg red) "[Rebuild]" @@ fun () ->
              Lwd.set buttons Ui.empty;
-             ignore (show_status var (Current_rpc.Job.rebuild job)) )
+             ignore (show_status dispatch var (Current_rpc.Job.rebuild job)) )
        else None );
        ( if can_cancel then
          Some
@@ -71,7 +98,7 @@ let rec show_status var job =
              Lwd.set buttons Ui.empty;
              Lwt.async (fun () ->
                  Current_rpc.Job.cancel job >>= fun _ ->
-                 ignore (show_status var job);
+                 ignore (show_status dispatch var job);
                  Lwt.return_unit) )
        else None );
      ]
@@ -89,6 +116,7 @@ let rec show_status var job =
              Lwt.return e
          | Ok ("", _) ->
              add "DONE";
+             dispatch := open_in_editor var log_lines;
              Lwt.return_ok ()
          | Ok (data, next) ->
              add data;
@@ -97,68 +125,68 @@ let rec show_status var job =
        aux 0L
      in
      ignore (show_log log_lines job);
-     let width = Lwd.var 0 in
-     let update_if_changed v x = if Lwd.peek v <> x then Lwd.set v x in
-     let scroll_state = Lwd.var NW.default_scroll_state in
-     let set_scroll reason st =
-       let scroll_on_output =
-         reason = `Content
-         &&
-         let st' = Lwd.peek scroll_state in
-         st'.NW.position = st'.NW.bound
-         && st.NW.position = st'.NW.position
-         && st.NW.position < st.NW.bound
+     let description = Lwd.pure (text |> NW.string |> Ui.resize ~w:0 ~sw:1) in
+     let buttons =
+       Lwd.map2
+         (fun x y -> Ui.resize ~w:0 ~sw:1 (Ui.join_x x y))
+         (Lwd.get buttons)
+         (Lwd.pure (Ui.resize Ui.empty ~h:1 ~sw:1 ~bg:Notty.A.(bg (gray 1))))
+     in
+     let text_view =
+       (* Setup scrolling *)
+       let scroll_state = Lwd.var NW.default_scroll_state in
+       let set_scroll reason st =
+         let scroll_on_output =
+           reason = `Content
+           &&
+           let st' = Lwd.peek scroll_state in
+           st'.NW.position = st'.NW.bound
+           && st.NW.position = st'.NW.position
+           && st.NW.position < st.NW.bound
+         in
+         if scroll_on_output then
+           Lwd.set scroll_state { st with position = st.NW.bound }
+         else Lwd.set scroll_state st
        in
-       if scroll_on_output then
-         Lwd.set scroll_state { st with position = st.NW.bound }
-       else Lwd.set scroll_state st
+       let text_body =
+         let width = Lwd.var 0 in
+         Lwd.bind (Lwd.get width) (W.word_wrap_string_table log_lines)
+         |> NW.vscroll_area ~state:(Lwd.get scroll_state) ~change:set_scroll
+         |> Lwd.map (fun ui ->
+                ui
+                |> (* Fill available space *)
+                   Ui.resize ~w:0 ~sw:1 ~h:0 ~sh:1
+                |> (* Adjust wrapping based on actual width *)
+                   Ui.size_sensor (fun w _ -> update_if_changed width w)
+                |> (* Scroll when dragging *)
+                   Ui.mouse_area (fun ~x:_ ~y:y0 ->
+                     function
+                     | `Left ->
+                         let st = Lwd.peek scroll_state in
+                         `Grab
+                           ( (fun ~x:_ ~y:y1 ->
+                               set_scroll `Change
+                                 { st with position = st.position + y0 - y1 }),
+                             fun ~x:_ ~y:_ -> () )
+                     | _ -> `Unhandled))
+       in
+       let scroll_bar =
+         Lwd.get scroll_state
+         |> Lwd.map (fun x ->
+                x
+                |> W.vertical_scrollbar ~set_scroll:(set_scroll `Change)
+                |> Ui.resize ~w:1 ~sw:0 ~h:0 ~sh:1)
+       in
+       Lwd_utils.pack Ui.pack_x [ text_body; scroll_bar ]
      in
-     let result =
-       Lwd_utils.pack Ui.pack_y
-         [
-           Lwd.pure (text |> NW.string |> Ui.resize ~w:0 ~sw:1);
-           Lwd_utils.pack Ui.pack_x
-             [
-               Lwd.get buttons;
-               Lwd.pure
-                 (Ui.resize ~h:1 ~sw:1 ~bg:Notty.A.(bg (gray 1)) Ui.empty);
-             ]
-           |> Lwd.map (Ui.resize ~w:0 ~sw:1);
-           Lwd_utils.pack Ui.pack_x
-             [
-               Lwd.bind (Lwd.get width) (W.word_wrap_string_table log_lines)
-               |> NW.vscroll_area ~state:(Lwd.get scroll_state)
-                    ~change:set_scroll
-               |> Lwd.map (fun ui ->
-                      ui
-                      |> Ui.resize ~w:0 ~sw:1 ~h:0 ~sh:1
-                      |> Ui.size_sensor (fun w _ -> update_if_changed width w)
-                      |> Ui.mouse_area (fun ~x:_ ~y:y0 ->
-                           function
-                           | `Left ->
-                               let st = Lwd.peek scroll_state in
-                               `Grab
-                                 ( (fun ~x:_ ~y:y1 ->
-                                     set_scroll `Change
-                                       {
-                                         st with
-                                         position = st.position + y0 - y1;
-                                       }),
-                                   fun ~x:_ ~y:_ -> () )
-                           | _ -> `Unhandled));
-               Lwd.get scroll_state
-               |> Lwd.map
-                    (W.vertical_scrollbar ~set_scroll:(set_scroll `Change))
-               |> Lwd.map (Ui.resize ~w:1 ~sw:0 ~h:0 ~sh:1);
-             ];
-         ]
-     in
-     Lwd.set var result
+     Lwd.set var (Lwd_utils.pack Ui.pack_y [ description; buttons; text_view ])
 
 let show_status job =
+  let dispatch = ref ignore in
   let result = Lwd.var (Lwd.pure Ui.empty) in
-  show_status result job
-  |> Lwt_result.map (fun () -> Lwd.join (Lwd.get result))
+  show_status dispatch result job
+  |> Lwt_result.map (fun () ->
+         ((fun x -> !dispatch x), Lwd.join (Lwd.get result)))
 
 let show_jobs commit pane =
   Client.Commit.jobs commit >|= function
@@ -167,13 +195,11 @@ let show_jobs commit pane =
         let pane = Pane.open_subview pane in
         Pane.set pane None (Lwd.pure (NW.string "..."));
         Lwt.async @@ fun () ->
-        Client.Commit.job_of_variant commit variant
-        |> show_status
-        >|= (function
-              | Ok ui -> ui
-              | Error (`Capnp e) -> Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e)
-              | Error `No_job -> Lwd.pure (NW.string "No jobs"))
-        >|= Pane.set pane None
+        Client.Commit.job_of_variant commit variant |> show_status >|= function
+        | Ok (dispatch, ui) -> Pane.set pane (Some dispatch) ui
+        | Error (`Capnp e) ->
+            Pane.set pane None (Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e))
+        | Error `No_job -> Pane.set pane None (Lwd.pure (NW.string "No jobs"))
       and render Client.{ variant; outcome } highlight =
         Ui.hcat
           [
