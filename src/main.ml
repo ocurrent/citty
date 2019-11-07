@@ -207,9 +207,23 @@ let show_repo repo pane =
       let select (_, hash) =
         let pane = Pane.open_subview pane in
         Pane.set pane None (Lwd.pure (NW.string "..."));
-        Lwt.async (fun () ->
-            let commit = Client.Repo.commit_of_hash repo hash in
-            show_jobs commit pane)
+        Lwt.async @@ fun () ->
+        let commit = Client.Repo.commit_of_hash repo hash in
+        Lwt.map (fun ui ->
+            let ui =
+              match ui with
+              | Ok ui -> ui
+              | Error (`Capnp e) -> Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e)
+              | Error `No_job -> Lwd.pure (NW.string "No jobs")
+            in
+            Pane.set pane None ui)
+        @@
+        let open Lwt_result in
+        Client.Commit.jobs commit >>= function
+        | [] -> Lwt.return_error `No_job
+        | job :: _ ->
+            (* FIXME: handle other jobs *)
+            show_status (Client.Commit.job_of_variant commit job.variant)
       in
       let render (gref, hash) highlight =
         render_list_item highlight
