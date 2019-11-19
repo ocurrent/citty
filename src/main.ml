@@ -115,7 +115,9 @@ let open_in_editor var log_lines = function
 
 let show_status dispatch var =
   let rec aux job =
-    Current_rpc.Job.status job
+    let status = Current_rpc.Job.status job in
+    let start_log = Current_rpc.Job.log ~start:0L job in
+    status
     |> Lwt_result.map
        @@ fun { Current_rpc.Job.id; description; can_cancel; can_rebuild } ->
        let text =
@@ -147,19 +149,17 @@ let show_status dispatch var =
        let log_lines = Lwd_table.make () in
        let show_log table job =
          let add str = if str <> "" then Lwd_table.append' table str in
-         let rec aux start =
-           Current_rpc.Job.log ~start job >>= function
+         let rec aux = function
            | Error _ as e ->
                add "ERROR";
                Lwt.return e
            | Ok ("", _) ->
-               add "DONE";
                Lwt.return_ok ()
            | Ok (data, next) ->
                add data;
-               aux next
+               Current_rpc.Job.log ~start:next job >>= aux
          in
-         aux 0L
+         start_log >>= aux
        in
        Lwt.async (fun () ->
            show_log log_lines job >|= fun _ ->
