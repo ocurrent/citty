@@ -59,7 +59,9 @@ let rec interleave sep = function
       hd :: sep :: tail
 
 let rec show_status var job =
-  Current_rpc.Job.status job
+  let status = Current_rpc.Job.status job in
+  let start_log = Current_rpc.Job.log ~start:0L job in
+  status
   |> Lwt_result.map
      @@ fun { Current_rpc.Job.id; description; can_cancel; can_rebuild } ->
      let text =
@@ -95,8 +97,8 @@ let rec show_status var job =
      let log_lines = Lwd_table.make () in
      let show_log table job =
        let add str = if str <> "" then Lwd_table.append' table str in
-       let rec aux start =
-         Current_rpc.Job.log ~start job >>= function
+       let rec aux x =
+         x >>= function
          | Error _ as e ->
              add "ERROR";
              Lwt.return e
@@ -105,9 +107,9 @@ let rec show_status var job =
              Lwt.return_ok ()
          | Ok (data, next) ->
              add data;
-             aux next
+             aux (Current_rpc.Job.log ~start:next job)
        in
-       aux 0L
+       aux start_log
      in
      ignore (show_log log_lines job);
      let width = Lwd.var 0 in
