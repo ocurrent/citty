@@ -361,3 +361,15 @@ end = struct
 
   let get view = view.tag
 end
+
+(* Widgets that can adjust their contents based on the visible size *)
+
+let dynamic_width ?(w = 0) ~sw ?h ?sh f =
+  let width = Lwd.var w in
+  let body = f (Lwd.get width) in
+  body
+  |> Lwd.map (fun ui ->
+         ui
+         |> Ui.resize ~w ~sw ?h ?sh
+         |> Ui.size_sensor (fun w _ ->
+                if Lwd.peek width <> w then Lwd.set width w))

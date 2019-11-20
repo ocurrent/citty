@@ -191,17 +191,13 @@ let show_status dispatch var =
            else Lwd.set scroll_state st
          in
          let text_body =
-           let width = Lwd.var 0 in
-           Lwd.bind (Lwd.get width) (W.word_wrap_string_table log_lines)
-           |> NW.vscroll_area ~state:(Lwd.get scroll_state) ~change:set_scroll
-           |> Lwd.map (fun ui ->
-                  ui
-                  |> (* Fill available space *)
-                     Ui.resize ~w:0 ~sw:1 ~h:0 ~sh:1
-                  |> (* Adjust wrapping based on actual width *)
-                     Ui.size_sensor (fun w _ -> update_if_changed width w)
-                  |> (* Scroll when dragging *)
-                     Ui.mouse_area (fun ~x:_ ~y:y0 ->
+           W.dynamic_width ~w:0 ~sw:1 ~h:0 ~sh:1 (fun width ->
+               Lwd.bind width (W.word_wrap_string_table log_lines)
+               |> NW.vscroll_area ~state:(Lwd.get scroll_state)
+                    ~change:set_scroll
+               |> (* Scroll when dragging *)
+                  Lwd.map
+                    (Ui.mouse_area (fun ~x:_ ~y:y0 ->
                        function
                        | `Left ->
                            let st = Lwd.peek scroll_state in
@@ -211,7 +207,7 @@ let show_status dispatch var =
                                  let position = clampi 0 st.bound position in
                                  set_scroll `Change { st with position }),
                                fun ~x:_ ~y:_ -> () )
-                       | _ -> `Unhandled))
+                       | _ -> `Unhandled)))
          in
          let scroll_bar =
            Lwd.get scroll_state
