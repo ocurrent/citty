@@ -7,11 +7,11 @@ module NW = Nottui_widgets
 module W = Widgets
 module Pane = W.Pane
 
-let header = Lwd.var (Lwd.pure Ui.empty)
+let header = Lwd.var W.empty
 
-let body = Lwd.var (Lwd.pure Ui.empty)
+let body = Lwd.var W.empty
 
-let footer = Lwd.var (Lwd.pure Ui.empty)
+let footer = Lwd.var W.empty
 
 let spinner =
   let rec frames =
@@ -153,8 +153,7 @@ let show_status dispatch var =
            | Error _ as e ->
                add "ERROR";
                Lwt.return e
-           | Ok ("", _) ->
-               Lwt.return_ok ()
+           | Ok ("", _) -> Lwt.return_ok ()
            | Ok (data, next) ->
                add data;
                Current_rpc.Job.log ~start:next job >>= aux
@@ -226,7 +225,7 @@ let show_status dispatch var =
   aux
 
 let show_status dispatch_var job =
-  let result = Lwd.var (Lwd.pure Ui.empty) in
+  let result = Lwd.var W.empty in
   show_status dispatch_var result job
   |> Lwt_result.map (fun () -> Lwd.get result |> Lwd.join)
 
