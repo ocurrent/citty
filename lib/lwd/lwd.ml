@@ -59,7 +59,7 @@ let bind child map = impure (Bind { child; map; intermediate = None })
 let id x = x
 let join child = impure (Bind { child; map = id; intermediate = None })
 
-(* Management of trace indexes *)
+(* Management of trace indices *)
 
 external t_equal : _ t -> _ t -> bool = "%eq"
 external obj_t : 'a t -> Obj.t t = "%identity"
