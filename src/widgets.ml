@@ -1,5 +1,7 @@
 open Nottui
 
+let empty = Lwd.pure Ui.empty
+
 (* Find the index of next control character in a string *)
 let control_character_index str i =
   let len = String.length str in
@@ -16,7 +18,7 @@ let control_character_index str i =
 (* Typeset the strings stored in a table with a fixed width, wrapping
    characters at the end of the line. *)
 let word_wrap_string_table table width =
-  if width <= 0 then Lwd.pure Ui.empty
+  if width <= 0 then empty
   else
     (* Wrap at least around 8 characters *)
     let width = max 8 width in
@@ -295,8 +297,6 @@ end = struct
     middle : 'a visual_pane;
     right : 'a visual_pane;
   }
-
-  let empty = Lwd.pure Ui.empty
 
   let bind_pane visual view =
     visual.view <- view;
