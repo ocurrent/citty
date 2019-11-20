@@ -7,6 +7,8 @@ module NW = Nottui_widgets
 module W = Widgets
 module Pane = W.Pane
 
+let clampi mn mx a : int = if a > mx then mx else if a < mn then mn else a
+
 let header = Lwd.var W.empty
 
 let body = Lwd.var W.empty
@@ -205,8 +207,9 @@ let show_status dispatch var =
                            let st = Lwd.peek scroll_state in
                            `Grab
                              ( (fun ~x:_ ~y:y1 ->
-                                 set_scroll `Change
-                                   { st with position = st.position + y0 - y1 }),
+                                 let position = st.position + y0 - y1 in
+                                 let position = clampi 0 st.bound position in
+                                 set_scroll `Change { st with position }),
                                fun ~x:_ ~y:_ -> () )
                        | _ -> `Unhandled))
          in
