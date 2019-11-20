@@ -236,7 +236,11 @@ let show_jobs commit pane =
         let pane = Pane.open_subview pane in
         let dispatch, dispatch_var = Lwt.wait () in
         let open_editor_asap = ref false in
-        let footer_spinner = Lwd.var (Lwd.pure Ui.empty) in
+        let footer_spinner =
+          Lwd.var (Lwd.map (NW.printf "%s Receiving log") spinner)
+        in
+        Lwt.ignore_result
+          (Lwt.map (fun _ -> Lwd.set footer_spinner W.empty) dispatch);
         let dispatch_fun action =
           match Lwt.state dispatch with
           | Return fn -> fn action
@@ -248,12 +252,7 @@ let show_jobs commit pane =
                   NW.string (frame ^ " Opening editor as soon as possible")
                 in
                 Lwd.set footer_spinner (Lwd.map display_spinner spinner);
-                Lwt.async (fun () ->
-                    Lwt.map
-                      (fun fn ->
-                        Lwd.set footer_spinner (Lwd.pure Ui.empty);
-                        fn `Activate)
-                      dispatch) )
+                Lwt.ignore_result (Lwt.map (fun fn -> fn `Activate) dispatch) )
         in
         let footer_ui = Lwd.get footer_spinner |> Lwd.join in
         Pane.set pane (Some dispatch_fun)
