@@ -7,10 +7,10 @@ type 'a t =
       desc: 'a desc;
     } -> 'a t
   | Root : {
-      mutable on_invalidate : 'a -> unit;
       mutable value : 'a option;
-      child : 'a t;
       mutable trace_idx : trace_idx;
+      mutable on_invalidate : 'a -> unit;
+      mutable child : 'a t option;
     } -> 'a t
 
 and _ desc =
@@ -172,6 +172,20 @@ let prim ~acquire ~release =
 let get_prim x = x
 let invalidate = invalidate_node
 
+let handle_exn exn msg =
+  let bt = Printexc.get_backtrace () in
+  let exn =
+    try Printexc.to_string exn
+    with _ -> "(exception printer failed)"
+  in
+  let lines =
+    String.split_on_char '\n' exn @
+    String.split_on_char '\n' bt
+  in
+  prerr_endline (String.concat "\n  " (msg :: lines))
+
+(* [sub_release] cannot raise.
+   If a primitive raises, the exception is caught and a warning is emitted. *)
 let rec sub_release : type a b . a t -> b t -> unit = fun origin ->
   function
   | Root _ -> assert false
@@ -247,12 +261,20 @@ let rec sub_release : type a b . a t -> b t -> unit = fun origin ->
         end
       | Var  _ -> ()
       | Prim t ->
-        let x = match t.acquired with None -> assert false | Some x -> x in
+        let acquired = t.acquired in
         t.acquired <- None;
-        t.release x
+        begin match acquired with
+          | None -> ()
+          | Some x ->
+            begin try t.release x with exn ->
+              handle_exn exn
+                "Lwd.prim warning: exception raised by release function."
+            end
+        end
       end
     | _ -> ()
 
+(* [sub_acquire] cannot raise *)
 let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
   function
   | Root _ -> assert false
@@ -313,32 +335,16 @@ let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
           | Some _ -> assert false
         end
       | Var  _ -> ()
-      | Prim t ->
-        begin match t.acquired with
-          | None -> t.acquired <- Some (t.acquire ())
-          | Some _ -> ()
-        end
+      | Prim _ -> ()
 
+(* [sub_sample] raise if any user-provided computation raises.
+   Graph will be left in a coherent state but exception will be propagated
+   to the observer. *)
 let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
   function
   | Root _ -> assert false
   | Pure x -> x
   | Impure t as self ->
-    begin match t.trace with
-      | Tn tn ->
-        let idx = get_idx self origin in
-        let active = tn.active in
-        if idx >= active then
-          tn.active <- active + 1;
-        if idx > active then (
-          let old = tn.entries.(active) in
-          tn.entries.(idx) <- old;
-          tn.entries.(active) <- obj_t origin;
-          mov_idx self active idx old;
-          mov_idx self idx active origin
-        )
-      | _ -> ()
-    end;
     match t.value with
     | Some value -> value
     | None ->
@@ -349,7 +355,11 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
         | App  (f, x) -> (sub_sample self f) (sub_sample self x)
         | Bind x ->
           let old_intermediate = x.intermediate in
-          let intermediate = x.map (sub_sample self x.child) in
+          let intermediate =
+            (* We haven't touched any state yet,
+               it is safe for [x.map] or [sub_sample] to raise *)
+            x.map (sub_sample self x.child)
+          in
           x.intermediate <- Some intermediate;
           sub_acquire self intermediate;
           let result = sub_sample self intermediate in
@@ -362,9 +372,28 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
         | Prim t ->
           begin match t.acquired with
             | Some x -> x
-            | None -> assert false
+            | None ->
+              (* It is safe to raise an exception here ! *)
+              let x = t.acquire () in
+              t.acquired <- Some x;
+              x
           end
       in
+      begin match t.trace with
+        | Tn tn ->
+          let idx = get_idx self origin in
+          let active = tn.active in
+          if idx >= active then
+            tn.active <- active + 1;
+          if idx > active then (
+            let old = tn.entries.(active) in
+            tn.entries.(idx) <- old;
+            tn.entries.(active) <- obj_t origin;
+            mov_idx self active idx old;
+            mov_idx self idx active origin
+          )
+        | _ -> ()
+      end;
       t.value <- Some value;
       value
 
@@ -372,7 +401,12 @@ type 'a root = 'a t
 
 (* TODO: use of Root after release is not detected and will break invariant *)
 let observe ?(on_invalidate=ignore) child =
-  let root = Root { child; value = None; on_invalidate; trace_idx = I0 } in
+  let root = Root {
+      child = Some child;
+      value = None;
+      on_invalidate;
+      trace_idx = I0
+    } in
   sub_acquire root child;
   root
 
@@ -382,23 +416,32 @@ let sample = function
     match t.value with
     | Some value -> value
     | None ->
-      let value = sub_sample self t.child in
-      t.value <- Some value;
-      value
+      match t.child with
+      | None -> invalid_arg "sample: root has been released"
+      | Some child ->
+        let value = sub_sample self child in
+        t.value <- Some value;
+        value
 
 let is_damaged = function
   | Pure _ | Impure _ -> assert false
   | Root { value = None ; _ } -> true
   | Root { value = Some _ ; _ } -> false
 
+let is_released = function
+  | Pure _ | Impure _ -> assert false
+  | Root { child = None ; _ } -> true
+  | Root { child = Some _ ; _ } -> false
+
 let release = function
   | Pure _ | Impure _ -> assert false
   | Root t as self ->
-    begin match t.value with
+    match t.child with
     | None -> ()
-    | Some _ -> t.value <- None;
-    end;
-    sub_release self t.child
+    | Some child ->
+      t.value <- None;
+      t.child <- None;
+      sub_release self child
 
 let set_on_invalidate x f =
   match x with
