@@ -27,6 +27,7 @@ val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 
 val sample : 'a root -> 'a
 val is_damaged : 'a root -> bool
+val is_released : 'a root -> bool
 val release : 'a root -> unit
 
 module Infix : sig
