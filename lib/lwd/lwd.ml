@@ -181,106 +181,97 @@ let invalidate = function
     end
   | _ -> assert false
 
-let handle_exn exn msg =
-  let bt = Printexc.get_backtrace () in
-  let exn =
-    try Printexc.to_string exn
-    with _ -> "(exception printer failed)"
-  in
-  let lines =
-    String.split_on_char '\n' exn @
-    String.split_on_char '\n' bt
-  in
-  prerr_endline (String.concat "\n  " (msg :: lines))
+type release_failure = exn * Printexc.raw_backtrace
+exception Release_failure of release_failure list
 
 (* [sub_release] cannot raise.
    If a primitive raises, the exception is caught and a warning is emitted. *)
-let rec sub_release : type a b . a t -> b t -> unit = fun origin ->
-  function
-  | Root _ -> assert false
-  | Pure _ -> ()
-  | Impure t as self ->
-    let trace = match t.trace with
-      | T0 -> assert false
-      | T1 x -> assert (t_equal x origin); T0
-      | T2 (x, y) ->
-        if t_equal x origin then T1 y
-        else if t_equal y origin then T1 x
-        else assert false
-      | T3 (x, y, z) ->
-        if t_equal x origin then T2 (y, z)
-        else if t_equal y origin then T2 (x, z)
-        else if t_equal z origin then T2 (x, y)
-        else assert false
-      | T4 (x, y, z, w) ->
-        if t_equal x origin then T3 (y, z, w)
-        else if t_equal y origin then T3 (x, z, w)
-        else if t_equal z origin then T3 (x, y, w)
-        else assert false
-      | Tn tn as trace ->
-        let revidx = rem_idx self origin in
-        assert (t_equal tn.entries.(revidx) origin);
-        let count = tn.count - 1 in
-        tn.count <- count;
-        if revidx < count then (
-          let obj = tn.entries.(count) in
-          tn.entries.(revidx) <- obj;
-          mov_idx self count revidx obj
-        );
-        tn.entries.(count) <- dummy;
-        if tn.active > count then tn.active <- count;
-        if count = 4 then (
-          let a = tn.entries.(0) and b = tn.entries.(1) in
-          let c = tn.entries.(2) and d = tn.entries.(3) in
-          ignore (rem_idx self a : int);
-          ignore (rem_idx self b : int);
-          ignore (rem_idx self c : int);
-          ignore (rem_idx self d : int);
-          T4 (a, b, c, d)
-        ) else
-          let len = Array.length tn.entries in
-          if count <= len lsr 2 then
-            Tn { active = tn.active; count = tn.count;
-                 entries = Array.sub tn.entries 0 (len lsr 1) }
-          else
-            trace
-    in
-    t.trace <- trace;
-    match trace with
-    | T0 ->
-      let value = t.value in
-      t.value <- None;
-      begin match t.desc with
-      | Map  (x, _) -> sub_release self x
-      | Map2 (x, y, _) ->
-        sub_release self x;
-        sub_release self y
-      | Pair (x, y) ->
-        sub_release self x;
-        sub_release self y
-      | App  (x, y) ->
-        sub_release self x;
-        sub_release self y
-      | Bind ({ child; intermediate; map = _ } as t) ->
-        sub_release self child;
-        begin match intermediate with
-          | None -> ()
-          | Some child' ->
-            t.intermediate <- None;
-            sub_release self child'
-        end
-      | Var  _ -> ()
-      | Prim t ->
-        begin match value with
-          | None -> ()
-          | Some x ->
-            begin try t.release x with exn ->
-              handle_exn exn
-                "Lwd.prim warning: exception raised by release function."
+let rec sub_release
+  : type a b . release_failure list -> a t -> b t -> release_failure list
+  = fun failures origin -> function
+    | Root _ -> assert false
+    | Pure _ -> failures
+    | Impure t as self ->
+      let trace = match t.trace with
+        | T0 -> assert false
+        | T1 x -> assert (t_equal x origin); T0
+        | T2 (x, y) ->
+          if t_equal x origin then T1 y
+          else if t_equal y origin then T1 x
+          else assert false
+        | T3 (x, y, z) ->
+          if t_equal x origin then T2 (y, z)
+          else if t_equal y origin then T2 (x, z)
+          else if t_equal z origin then T2 (x, y)
+          else assert false
+        | T4 (x, y, z, w) ->
+          if t_equal x origin then T3 (y, z, w)
+          else if t_equal y origin then T3 (x, z, w)
+          else if t_equal z origin then T3 (x, y, w)
+          else assert false
+        | Tn tn as trace ->
+          let revidx = rem_idx self origin in
+          assert (t_equal tn.entries.(revidx) origin);
+          let count = tn.count - 1 in
+          tn.count <- count;
+          if revidx < count then (
+            let obj = tn.entries.(count) in
+            tn.entries.(revidx) <- obj;
+            mov_idx self count revidx obj
+          );
+          tn.entries.(count) <- dummy;
+          if tn.active > count then tn.active <- count;
+          if count = 4 then (
+            let a = tn.entries.(0) and b = tn.entries.(1) in
+            let c = tn.entries.(2) and d = tn.entries.(3) in
+            ignore (rem_idx self a : int);
+            ignore (rem_idx self b : int);
+            ignore (rem_idx self c : int);
+            ignore (rem_idx self d : int);
+            T4 (a, b, c, d)
+          ) else
+            let len = Array.length tn.entries in
+            if count <= len lsr 2 then
+              Tn { active = tn.active; count = tn.count;
+                   entries = Array.sub tn.entries 0 (len lsr 1) }
+            else
+              trace
+      in
+      t.trace <- trace;
+      match trace with
+      | T0 ->
+        let value = t.value in
+        t.value <- None;
+        begin match t.desc with
+          | Map  (x, _) -> sub_release failures self x
+          | Map2 (x, y, _) ->
+            sub_release (sub_release failures self x) self y
+          | Pair (x, y) ->
+            sub_release (sub_release failures self x) self y
+          | App  (x, y) ->
+            sub_release (sub_release failures self x) self y
+          | Bind ({ child; intermediate; map = _ } as t) ->
+            let failures = sub_release failures self child in
+            begin match intermediate with
+              | None -> failures
+              | Some child' ->
+                t.intermediate <- None;
+                sub_release failures self child'
+            end
+          | Var  _ -> failures
+          | Prim t ->
+            begin match value with
+              | None -> failures
+              | Some x ->
+                begin match t.release x with
+                  | () -> failures
+                  | exception exn ->
+                    let bt = Printexc.get_raw_backtrace () in
+                    (exn, bt) :: failures
+                end
             end
         end
-      end
-    | _ -> ()
+      | _ -> failures
 
 (* [sub_acquire] cannot raise *)
 let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
@@ -301,11 +292,6 @@ let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
         in
         for i = 0 to 4 do add_idx self i entries.(i) done;
         Tn { active = 5; count = 5; entries }
-      (*| T0 ->
-        let obj = obj_t origin in
-        let entries = [| obj; dummy; dummy; dummy |] in
-        add_idx self 0 obj;
-        Tn { active = 1; count = 1; entries }*)
       | Tn tn as trace ->
         let index = tn.count in
         let entries, trace =
@@ -345,6 +331,21 @@ let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
       | Var  _ -> ()
       | Prim _ -> ()
 
+let activate_tracing self origin = function
+  | Tn tn ->
+    let idx = get_idx self origin in
+    let active = tn.active in
+    if idx >= active then
+      tn.active <- active + 1;
+    if idx > active then (
+      let old = tn.entries.(active) in
+      tn.entries.(idx) <- old;
+      tn.entries.(active) <- obj_t origin;
+      mov_idx self active idx old;
+      mov_idx self idx active origin
+    )
+  | _ -> ()
+
 (* [sub_sample] raise if any user-provided computation raises.
    Graph will be left in a coherent state but exception will be propagated
    to the observer. *)
@@ -372,29 +373,22 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
           sub_acquire self intermediate;
           let result = sub_sample self intermediate in
           begin match old_intermediate with
-            | Some x' -> sub_release self x'
-            | None -> ()
-          end;
-          result
+            | None -> result
+            | Some x' ->
+              match sub_release [] self x' with
+              | [] -> result
+              | failures ->
+                (* Commit result, just like normal continuation *)
+                t.value <- Some result;
+                activate_tracing self origin t.trace;
+                (* Raise release exception *)
+                raise (Release_failure failures)
+          end
         | Var  x -> x.binding
         | Prim t -> t.acquire ()
       in
-      begin match t.trace with
-        | Tn tn ->
-          let idx = get_idx self origin in
-          let active = tn.active in
-          if idx >= active then
-            tn.active <- active + 1;
-          if idx > active then (
-            let old = tn.entries.(active) in
-            tn.entries.(idx) <- old;
-            tn.entries.(active) <- obj_t origin;
-            mov_idx self active idx old;
-            mov_idx self idx active origin
-          )
-        | _ -> ()
-      end;
       t.value <- Some value;
+      activate_tracing self origin t.trace;
       value
 
 type 'a root = 'a t
@@ -441,7 +435,9 @@ let release = function
     | Some child ->
       t.value <- None;
       t.child <- None;
-      sub_release self child
+      match sub_release [] self child with
+      | [] -> ()
+      | failures -> raise (Release_failure failures)
 
 let set_on_invalidate x f =
   match x with

@@ -21,6 +21,9 @@ val prim : acquire:(unit -> 'a) -> release:('a -> unit) -> 'a prim
 val get_prim : 'a prim -> 'a t
 val invalidate : 'a prim -> unit
 
+type release_failure = exn * Printexc.raw_backtrace
+exception Release_failure of release_failure list
+
 type 'a root
 val observe : ?on_invalidate:('a -> unit) -> 'a t -> 'a root
 val set_on_invalidate : 'a root -> ('a -> unit) -> unit
