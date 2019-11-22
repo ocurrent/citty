@@ -32,3 +32,18 @@ let pack_seq (zero, plus) items =
   | [] -> Lwd.return zero
   | (_,x) :: xs ->
     List.fold_left (fun acc (_, v) -> Lwd.map2 plus v acc) x xs
+
+let trace f =
+  let r = ref None in
+  let acquire () = match !r with
+    | None -> invalid_arg "Lwd_utils.trace: cyclic evaluation"
+    | Some v -> v
+  in
+  let prim = Lwd.prim ~acquire ~release:ignore in
+  let update v =
+    r := Some v;
+    Lwd.invalidate prim
+  in
+  let v, result = f (Lwd.get_prim prim) update in
+  r := Some v;
+  result
