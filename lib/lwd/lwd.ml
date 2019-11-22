@@ -22,8 +22,7 @@ and _ desc =
              mutable intermediate : 'b t option } -> 'b desc
   | Var  : { mutable binding : 'a } -> 'a desc
   | Prim : { acquire : unit -> 'a;
-             release : 'a -> unit;
-             mutable acquired : 'a option } -> 'a desc
+             release : 'a -> unit } -> 'a desc
 
 and trace =
   | T0
@@ -168,9 +167,19 @@ let peek = function
 (* Primitives *)
 type 'a prim = 'a t
 let prim ~acquire ~release =
-  impure (Prim { acquire; release; acquired = None })
+  impure (Prim { acquire; release })
 let get_prim x = x
-let invalidate = invalidate_node
+
+let invalidate = function
+  | Impure ({ desc = Prim p; _ } as t) ->
+    let value = t.value in
+    t.value <- None;
+    invalidate_trace t.trace;
+    begin match value with
+      | None -> ()
+      | Some v -> p.release v
+    end
+  | _ -> assert false
 
 let handle_exn exn msg =
   let bt = Printexc.get_backtrace () in
@@ -239,6 +248,7 @@ let rec sub_release : type a b . a t -> b t -> unit = fun origin ->
     t.trace <- trace;
     match trace with
     | T0 ->
+      let value = t.value in
       t.value <- None;
       begin match t.desc with
       | Map  (x, _) -> sub_release self x
@@ -261,9 +271,7 @@ let rec sub_release : type a b . a t -> b t -> unit = fun origin ->
         end
       | Var  _ -> ()
       | Prim t ->
-        let acquired = t.acquired in
-        t.acquired <- None;
-        begin match acquired with
+        begin match value with
           | None -> ()
           | Some x ->
             begin try t.release x with exn ->
@@ -369,15 +377,7 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
           end;
           result
         | Var  x -> x.binding
-        | Prim t ->
-          begin match t.acquired with
-            | Some x -> x
-            | None ->
-              (* It is safe to raise an exception here ! *)
-              let x = t.acquire () in
-              t.acquired <- Some x;
-              x
-          end
+        | Prim t -> t.acquire ()
       in
       begin match t.trace with
         | Tn tn ->
