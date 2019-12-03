@@ -200,6 +200,11 @@ let rec show_job pane job =
        (* Setup scrolling *)
        let scroll_state = Lwd.var NW.default_scroll_state in
        let set_scroll reason st =
+         let off_screen =
+           reason = `Content
+           &&
+           st.NW.position > st.NW.bound
+         in
          let scroll_on_output =
            reason = `Content
            &&
@@ -208,7 +213,7 @@ let rec show_job pane job =
            && st.NW.position = st'.NW.position
            && st.NW.position < st.NW.bound
          in
-         if scroll_on_output then
+         if scroll_on_output || off_screen then
            Lwd.set scroll_state { st with position = st.NW.bound }
          else Lwd.set scroll_state st
        in
