@@ -359,24 +359,23 @@ let main () =
             dispatch action;
             `Handled )
   in
+  let focus_handle = Focus.make () in
+  Focus.request focus_handle;
   Lwd.set body
     ( Pane.render pane
-    |> Lwd.map
-         (Ui.focus_area (Time.next ())
-            {
-              action =
-                (fun _ -> function
-                  | (`Arrow `Up | `ASCII 'k'), [] ->
-                      dispatch `Middle `Select_prev
-                  | (`Arrow `Down | `ASCII 'j'), [] ->
-                      dispatch `Middle `Select_next
-                  | (`Arrow `Left | `ASCII 'h'), [] -> dispatch `Left `Activate
-                  | (`Arrow `Right | `ASCII 'l'), [] ->
-                      dispatch `Right `Activate
-                  | (`Escape | `ASCII 'q'), [] -> exit 0
-                  | _ -> `Unhandled);
-              status = (fun _ _ -> ());
-            }) );
+      |> Lwd.map2
+        (fun focus -> Ui.keyboard_area ~focus @@ function
+           | (`Arrow `Up | `ASCII 'k'), [] ->
+             dispatch `Middle `Select_prev
+           | (`Arrow `Down | `ASCII 'j'), [] ->
+             dispatch `Middle `Select_next
+           | (`Arrow `Left | `ASCII 'h'), [] -> dispatch `Left `Activate
+           | (`Arrow `Right | `ASCII 'l'), [] ->
+             dispatch `Right `Activate
+           | (`Escape | `ASCII 'q'), [] -> exit 0
+           | _ -> `Unhandled)
+        (Focus.status focus_handle);
+    );
   Lwt_main.run
     (show_repos (Pane.open_root pane) >>= function
      | Ok () -> Nottui_lwt.run ui
