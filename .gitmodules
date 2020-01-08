@@ -1,3 +1,6 @@
 [submodule "ocaml-ci"]
 	path = ocaml-ci
 	url = https://github.com/ocaml-ci/ocaml-ci.git
+[submodule "lwd"]
+	path = lwd
+	url = https://github.com/let-def/lwd.git
