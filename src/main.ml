@@ -278,14 +278,14 @@ let show_jobs commit pane =
 let show_repo repo pane =
   Client.Repo.refs repo >>= function
   | Ok refs ->
-      let select (_, hash) =
+      let select (_, (hash, _status)) =
         let pane = Pane.open_subview pane in
         Pane.set pane None (Lwd.pure (NW.string "..."));
         Lwt.async (fun () ->
             let commit = Client.Repo.commit_of_hash repo hash in
             show_jobs commit pane)
       in
-      let render (gref, hash) highlight =
+      let render (gref, (hash, _status)) highlight =
         render_list_item highlight
           (Printf.sprintf "%10s   #%s" (W.fit_string gref 24)
              (String.sub hash 0 6))
@@ -335,8 +335,8 @@ let show_repos pane =
                    (function
                      | Error e -> [ Error e ]
                      | Ok repos ->
-                         let handle_of repo =
-                           Ok ((org, repo), Client.Org.repo handle repo)
+                         let handle_of { Client.Org.name; master_status = _} =
+                           Ok ((org, name), Client.Org.repo handle name)
                          in
                          List.map handle_of repos)
                    (Client.Org.repos handle))

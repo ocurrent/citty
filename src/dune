@@ -1,4 +1,5 @@
 (executable
  (name main)
+ (modes byte exe)
  (libraries ocaml-ci-api current_rpc capnp-rpc-unix lwd nottui nottui-lwt
    nottui-widgets))

@@ -1,6 +1,6 @@
-(lang dune 1.10)
+(lang dune 2.0)
+
 (name citty)
-(using fmt 1.2)
 
 (generate_opam_files true)
 (source (github ocaml-ci/citty))
