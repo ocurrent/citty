@@ -100,9 +100,8 @@ let open_in_editor refresh log_lines = function
             match Sys.getenv_opt "EDITOR" with
             | Some x -> [ x ]
             | None -> (
-                match Sys.getenv_opt "PAGER" with
-                | Some x -> [ x ]
-                | None -> [] ) )
+                match Sys.getenv_opt "PAGER" with Some x -> [ x ] | None -> [] )
+            )
       in
       let candidates = candidates @ [ "xdg-open"; "open" ] in
       ignore
@@ -200,11 +199,7 @@ let rec show_job pane job =
        (* Setup scrolling *)
        let scroll_state = Lwd.var NW.default_scroll_state in
        let set_scroll reason st =
-         let off_screen =
-           reason = `Content
-           &&
-           st.NW.position > st.NW.bound
-         in
+         let off_screen = reason = `Content && st.NW.position > st.NW.bound in
          let scroll_on_output =
            reason = `Content
            &&
@@ -220,21 +215,19 @@ let rec show_job pane job =
        let text_body =
          W.dynamic_width ~w:0 ~sw:1 ~h:0 ~sh:1 (fun width ->
              Lwd.bind width (W.word_wrap_string_table log_lines)
-             |> NW.vscroll_area ~state:(Lwd.get scroll_state)
-                  ~change:set_scroll
+             |> NW.vscroll_area ~state:(Lwd.get scroll_state) ~change:set_scroll
              |> (* Scroll when dragging *)
-                Lwd.map
-                  (Ui.mouse_area (fun ~x:_ ~y:y0 ->
-                     function
-                     | `Left ->
-                         let st = Lwd.peek scroll_state in
-                         `Grab
-                           ( (fun ~x:_ ~y:y1 ->
-                               let position = st.position + y0 - y1 in
-                               let position = clampi 0 st.bound position in
-                               set_scroll `Change { st with position }),
-                             fun ~x:_ ~y:_ -> () )
-                     | _ -> `Unhandled)))
+             Lwd.map
+               (Ui.mouse_area (fun ~x:_ ~y:y0 -> function
+                  | `Left ->
+                      let st = Lwd.peek scroll_state in
+                      `Grab
+                        ( (fun ~x:_ ~y:y1 ->
+                            let position = st.position + y0 - y1 in
+                            let position = clampi 0 st.bound position in
+                            set_scroll `Change { st with position }),
+                          fun ~x:_ ~y:_ -> () )
+                  | _ -> `Unhandled)))
        in
        let scroll_bar =
          Lwd.get scroll_state
@@ -335,7 +328,7 @@ let show_repos pane =
                    (function
                      | Error e -> [ Error e ]
                      | Ok repos ->
-                         let handle_of { Client.Org.name; master_status = _} =
+                         let handle_of { Client.Org.name; master_status = _ } =
                            Ok ((org, name), Client.Org.repo handle name)
                          in
                          List.map handle_of repos)
@@ -363,19 +356,16 @@ let main () =
   Focus.request focus_handle;
   Lwd.set body
     ( Pane.render pane
-      |> Lwd.map2
-        (fun focus -> Ui.keyboard_area ~focus @@ function
-           | (`Arrow `Up | `ASCII 'k'), [] ->
-             dispatch `Middle `Select_prev
-           | (`Arrow `Down | `ASCII 'j'), [] ->
-             dispatch `Middle `Select_next
+    |> Lwd.map2
+         (fun focus ->
+           Ui.keyboard_area ~focus @@ function
+           | (`Arrow `Up | `ASCII 'k'), [] -> dispatch `Middle `Select_prev
+           | (`Arrow `Down | `ASCII 'j'), [] -> dispatch `Middle `Select_next
            | (`Arrow `Left | `ASCII 'h'), [] -> dispatch `Left `Activate
-           | (`Arrow `Right | `ASCII 'l'), [] ->
-             dispatch `Right `Activate
+           | (`Arrow `Right | `ASCII 'l'), [] -> dispatch `Right `Activate
            | (`Escape | `ASCII 'q'), [] -> exit 0
            | _ -> `Unhandled)
-        (Focus.status focus_handle);
-    );
+         (Focus.status focus_handle) );
   Lwt_main.run
     (show_repos (Pane.open_root pane) >>= function
      | Ok () -> Nottui_lwt.run ui
