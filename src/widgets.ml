@@ -55,15 +55,16 @@ let word_wrap_string_table table width =
           render_line str
       | lines ->
           (* Something was split:
-           - append remaining characters
-           - render each line
-           - concatenate them vertically *)
+             - append remaining characters
+             - render each line
+             - concatenate them vertically *)
           ("↳" ^ String.sub str !pos (len - !pos)) :: lines
           |> List.rev_map render_line
           |> Lwd_utils.pure_pack Ui.pack_y
     in
     (* Stack three images vertically *)
     let join3 a b c = Ui.join_y a (Ui.join_y b c) in
+
     (* Map reduce the table, lifting the strings to an intermediate type
        that is suitable for word wrapping.
 
@@ -123,10 +124,10 @@ let word_wrap_string_table table width =
                   | Some (ub, sb) -> (join3 ua (wrap_line line) ub, sb) ) ) )
       table
     |> (* After reducing the table, we produce the final UI, interpreting
-       unterminated prefix and suffix has line of their own. *)
-       Lwd.map (function
-         | pa, None -> wrap_line pa
-         | pa, Some (ub, sb) -> join3 (wrap_line pa) ub (wrap_line sb))
+          unterminated prefix and suffix has line of their own. *)
+    Lwd.map (function
+      | pa, None -> wrap_line pa
+      | pa, Some (ub, sb) -> join3 (wrap_line pa) ub (wrap_line sb))
 
 (* Grab the mouse and repeat an event until button is released *)
 let grab_and_repeat f =
@@ -185,9 +186,7 @@ let vertical_scrollbar ~set_scroll (st : Nottui_widgets.scroll_state) =
                     float st.position
                     +. (float dy /. float st.visible *. float st.total)
                   in
-                  let position =
-                    max 0 (min st.bound (int_of_float position))
-                  in
+                  let position = max 0 (min st.bound (int_of_float position)) in
                   set_scroll { st with position }),
                 fun ~x:_ ~y:_ -> () )
       | _ -> `Unhandled
