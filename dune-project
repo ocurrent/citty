@@ -3,8 +3,9 @@
 (name citty)
 
 (generate_opam_files true)
-(source (github ocaml-ci/citty))
+(source (github ocurrent/citty))
 (authors "Frédéric Bour")
+(maintainers "Frédéric Bour")
 
 (package
  (name citty)
