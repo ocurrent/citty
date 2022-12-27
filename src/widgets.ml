@@ -60,7 +60,7 @@ let word_wrap_string_table table width =
              - concatenate them vertically *)
           ("↳" ^ String.sub str !pos (len - !pos)) :: lines
           |> List.rev_map render_line
-          |> Lwd_utils.pure_pack Ui.pack_y
+          |> Lwd_utils.reduce Ui.pack_y
     in
     (* Stack three images vertically *)
     let join3 a b c = Ui.join_y a (Ui.join_y b c) in
@@ -108,7 +108,7 @@ let word_wrap_string_table table width =
                 let ui =
                   rest
                   |> List.rev_map wrap_line
-                  |> Lwd_utils.pure_pack Ui.pack_y
+                  |> Lwd_utils.reduce Ui.pack_y
                 in
                 (prefix, Some (ui, suffix)) ))
       ( ("", None),
@@ -125,7 +125,7 @@ let word_wrap_string_table table width =
       table
     |> (* After reducing the table, we produce the final UI, interpreting
           unterminated prefix and suffix has line of their own. *)
-    Lwd.map (function
+    Lwd.map ~f:(function
       | pa, None -> wrap_line pa
       | pa, Some (ub, sb) -> join3 (wrap_line pa) ub (wrap_line sb))
 
@@ -236,10 +236,10 @@ let list_box ~items ~render ~select =
   let show_item x =
     let item = (Lwd.var false, x) in
     let ui =
-      Lwd.map' (Lwd.get (fst item)) @@ fun highlight ->
+      Lwd.map (Lwd.get (fst item)) ~f:(fun highlight ->
       Ui.mouse_area
         (on_click @@ fun () -> select_item item)
-        (render (snd item) highlight)
+        (render (snd item) highlight))
     in
     (item, ui)
   in
@@ -310,7 +310,7 @@ end = struct
 
   let render t =
     let place_ui_var ?sw v =
-      Lwd.(v |> get |> join |> map (Ui.resize ~w:0 ?sw))
+      Lwd.(v |> get |> join |> map ~f:(Ui.resize ~w:0 ?sw))
     in
     let spacer =
       Ui.empty |> Ui.resize ~w:1 ~sh:1 ~bg:Notty.A.(bg (gray 1)) |> Lwd.pure
@@ -367,8 +367,8 @@ let dynamic_width ?(w = 0) ~sw ?h ?sh f =
   let width = Lwd.var w in
   let body = f (Lwd.get width) in
   body
-  |> Lwd.map (fun ui ->
+  |> Lwd.map ~f:(fun ui ->
          ui
          |> Ui.resize ~w ~sw ?h ?sh
-         |> Ui.size_sensor (fun w _ ->
+         |> Ui.size_sensor (fun ~w ~h:_ ->
                 if Lwd.peek width <> w then Lwd.set width w))
