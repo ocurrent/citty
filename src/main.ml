@@ -8,26 +8,13 @@ module W = Widgets
 module Pane = W.Pane
 
 let clampi mn mx a : int = if a > mx then mx else if a < mn then mn else a
-
 let header = Lwd.var W.empty
-
 let body = Lwd.var W.empty
-
 let footer = Lwd.var W.empty
 
 let spinner =
   let rec frames =
-    "⠋"
-    :: "⠙"
-    :: "⠹"
-    :: "⠸"
-    :: "⠼"
-    :: "⠴"
-    :: "⠦"
-    :: "⠧"
-    :: "⠇"
-    :: "⠏"
-    :: frames
+    "⠋" :: "⠙" :: "⠹" :: "⠸" :: "⠼" :: "⠴" :: "⠦" :: "⠧" :: "⠇" :: "⠏" :: frames
   in
   Lwd.prim
     ~acquire:(fun _self ->
@@ -81,10 +68,9 @@ let import_ci_ref ~vat = function
       | Some home ->
           let path = Filename.concat home ".ocaml-ci.cap" in
           if Sys.file_exists path then Capnp_rpc_unix.Cap_file.load vat path
-          else failwithf "Default cap file %S not found!" path )
+          else failwithf "Default cap file %S not found!" path)
 
 let log_file = Filename.temp_file "citty" ".log"
-
 let () = at_exit (fun () -> Sys.remove log_file)
 
 let open_in_editor refresh log_lines = function
@@ -100,8 +86,7 @@ let open_in_editor refresh log_lines = function
             match Sys.getenv_opt "EDITOR" with
             | Some x -> [ x ]
             | None -> (
-                match Sys.getenv_opt "PAGER" with Some x -> [ x ] | None -> [] )
-            )
+                match Sys.getenv_opt "PAGER" with Some x -> [ x ] | None -> []))
       in
       let candidates = candidates @ [ "xdg-open"; "open" ] in
       ignore
@@ -134,7 +119,7 @@ let rec show_job pane job =
         if (not !open_editor_asap) && action = `Activate then (
           open_editor_asap := true;
           set_footer `Opening;
-          Lwt.ignore_result (Lwt.map (fun fn -> fn `Activate) dispatch) )
+          Lwt.ignore_result (Lwt.map (fun fn -> fn `Activate) dispatch))
   in
   Pane.set pane (Some dispatch_fun)
     (Lwd.map footer
@@ -150,21 +135,21 @@ let rec show_job pane job =
      in
      let buttons = Lwd.var Ui.empty in
      [
-       ( if can_rebuild then
-         Some
-           ( W.button Notty.A.(bg red) "[Rebuild]" @@ fun () ->
-             Lwd.set buttons Ui.empty;
-             ignore (show_job pane (Current_rpc.Job.rebuild job)) )
-       else None );
-       ( if can_cancel then
-         Some
-           ( W.button Notty.A.(bg blue) "[Cancel]" @@ fun () ->
-             Lwd.set buttons Ui.empty;
-             Lwt.async (fun () ->
-                 Current_rpc.Job.cancel job >>= fun _ ->
-                 ignore (show_job pane job);
-                 Lwt.return_unit) )
-       else None );
+       (if can_rebuild then
+        Some
+          ( W.button Notty.A.(bg red) "[Rebuild]" @@ fun () ->
+            Lwd.set buttons Ui.empty;
+            ignore (show_job pane (Current_rpc.Job.rebuild job)) )
+       else None);
+       (if can_cancel then
+        Some
+          ( W.button Notty.A.(bg blue) "[Cancel]" @@ fun () ->
+            Lwd.set buttons Ui.empty;
+            Lwt.async (fun () ->
+                Current_rpc.Job.cancel job >>= fun _ ->
+                ignore (show_job pane job);
+                Lwt.return_unit) )
+       else None);
      ]
      |> filter_map (fun x -> x)
      |> interleave (Ui.atom (Notty.I.void 1 0))
@@ -218,16 +203,17 @@ let rec show_job pane job =
              |> NW.vscroll_area ~state:(Lwd.get scroll_state) ~change:set_scroll
              |> (* Scroll when dragging *)
              Lwd.map
-               ~f:(Ui.mouse_area (fun ~x:_ ~y:y0 -> function
-                  | `Left ->
-                      let st = Lwd.peek scroll_state in
-                      `Grab
-                        ( (fun ~x:_ ~y:y1 ->
-                            let position = st.position + y0 - y1 in
-                            let position = clampi 0 st.bound position in
-                            set_scroll `Change { st with position }),
-                          fun ~x:_ ~y:_ -> () )
-                  | _ -> `Unhandled)))
+               ~f:
+                 (Ui.mouse_area (fun ~x:_ ~y:y0 -> function
+                    | `Left ->
+                        let st = Lwd.peek scroll_state in
+                        `Grab
+                          ( (fun ~x:_ ~y:y1 ->
+                              let position = st.position + y0 - y1 in
+                              let position = clampi 0 st.bound position in
+                              set_scroll `Change { st with position }),
+                            fun ~x:_ ~y:_ -> () )
+                    | _ -> `Unhandled)))
        in
        let scroll_bar =
          Lwd.get scroll_state
@@ -338,7 +324,7 @@ let show_repos pane =
           let items = List.flatten items in
           let ui, dispatch = W.list_box ~items ~render ~select in
           Pane.set pane (Some dispatch) ui;
-          Lwt.return_ok () )
+          Lwt.return_ok ())
 
 let main () =
   let pane = Pane.make () in
@@ -350,12 +336,12 @@ let main () =
         | None -> `Unhandled
         | Some dispatch ->
             dispatch action;
-            `Handled )
+            `Handled)
   in
   let focus_handle = Focus.make () in
   Focus.request focus_handle;
   Lwd.set body
-    ( Pane.render pane
+    (Pane.render pane
     |> Lwd.map2
          ~f:(fun focus ->
            Ui.keyboard_area ~focus @@ function
@@ -365,7 +351,7 @@ let main () =
            | (`Arrow `Right | `ASCII 'l'), [] -> dispatch `Right `Activate
            | (`Escape | `ASCII 'q'), [] -> exit 0
            | _ -> `Unhandled)
-         (Focus.status focus_handle) );
+         (Focus.status focus_handle));
   Lwt_main.run
     (show_repos (Pane.open_root pane) >>= function
      | Ok () -> Nottui_lwt.run ui
