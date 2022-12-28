@@ -19,6 +19,8 @@ depends: [
   "ocaml-ci-api"
   "fpath"
   "fmt"
+  "logs"
+  "cmdliner" {>= "1.1.0"}
   "odoc" {with-doc}
 ]
 build: [

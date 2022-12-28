@@ -22,4 +22,6 @@
   (nottui-lwt (>= 0.3))
   ocaml-ci-api
   fpath
-  fmt))
+  fmt
+  logs
+  (cmdliner (>= 1.1.0))))

@@ -278,9 +278,9 @@ let show_repo repo pane =
       Pane.set pane None (Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e));
       Lwt.return_unit
 
-let show_repos pane =
+let show_repos pane ~ci_uri =
   let vat = Capnp_rpc_unix.client_only_vat () in
-  match import_ci_ref ~vat None with
+  match import_ci_ref ~vat ci_uri with
   | Error _ as e -> Lwt.return e
   | Ok sr -> (
       let host = Uri.host_with_default (Capnp_rpc_unix.Vat.export vat sr) in
@@ -326,7 +326,7 @@ let show_repos pane =
           Pane.set pane (Some dispatch) ui;
           Lwt.return_ok ())
 
-let main () =
+let main () ci_uri =
   let pane = Pane.make () in
   let dispatch pos action =
     match Pane.current_view pane pos with
@@ -353,7 +353,7 @@ let main () =
            | _ -> `Unhandled)
          (Focus.status focus_handle));
   Lwt_main.run
-    (show_repos (Pane.open_root pane) >>= function
+    (show_repos (Pane.open_root pane) ~ci_uri >>= function
      | Ok () -> Nottui_lwt.run ui
      | Error (`Capnp err) ->
          Format.eprintf "%a" Capnp_rpc.Error.pp err;
@@ -362,4 +362,24 @@ let main () =
          Format.eprintf "Error: %S" msg;
          Lwt.return_unit)
 
-let () = main ()
+let setup_log style_renderer level =
+  Fmt_tty.setup_std_outputs ?style_renderer ();
+  Logs.set_level level;
+  Logs.set_reporter (Logs_fmt.reporter ());
+  ()
+
+(* Command line interface *)
+
+open Cmdliner
+
+let setup_log =
+  Term.(const setup_log $ Fmt_cli.style_renderer () $ Logs_cli.level ())
+
+let cap =
+  Arg.value
+  @@ Arg.opt Arg.(some Capnp_rpc_unix.sturdy_uri) None
+  @@ Arg.info ~doc:"The ocaml-ci.cap file. Defaults to $(i,~/.ocaml-ci.cap)."
+       ~docv:"CAP" [ "ci-cap" ]
+
+let main = Term.(const main $ setup_log $ cap)
+let () = exit @@ Cmd.(eval (v (info "citty") main))

@@ -2,4 +2,16 @@
  (name main)
  (public_name citty)
  (modes byte exe)
- (libraries ocaml-ci-api current_rpc capnp-rpc-unix lwd nottui nottui-lwt))
+ (libraries
+  ocaml-ci-api
+  current_rpc
+  capnp-rpc-unix
+  lwd
+  nottui
+  nottui-lwt
+  fmt
+  fmt.cli
+  fmt.tty
+  logs
+  logs.fmt
+  logs.cli))
