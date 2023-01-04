@@ -5,6 +5,7 @@
 (generate_opam_files true)
 (source (github ocaml-ci/citty))
 (authors "Frédéric Bour")
+(license "MIT")
 
 (package
  (name citty)
