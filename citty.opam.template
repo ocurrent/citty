@@ -1,0 +1,4 @@
+pin-depends: [
+  [ "ocaml-ci-api.dev" "git+https://github.com/ocurrent/ocaml-ci.git#9b9a3d77eb2fd51017e5934b533a6d8fb190323b" ] # master
+  [ "solver-service-api.dev" "git+https://github.com/ocurrent/solver-service.git#2e0695f844c45048a6e40e2d45a2aaff46c9c163" ] # solver-ci
+]
