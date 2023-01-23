@@ -8,29 +8,16 @@ module W = Widgets
 module Pane = W.Pane
 
 let clampi mn mx a : int = if a > mx then mx else if a < mn then mn else a
-
 let header = Lwd.var W.empty
-
 let body = Lwd.var W.empty
-
 let footer = Lwd.var W.empty
 
 let spinner =
   let rec frames =
-    "⠋"
-    :: "⠙"
-    :: "⠹"
-    :: "⠸"
-    :: "⠼"
-    :: "⠴"
-    :: "⠦"
-    :: "⠧"
-    :: "⠇"
-    :: "⠏"
-    :: frames
+    "⠋" :: "⠙" :: "⠹" :: "⠸" :: "⠼" :: "⠴" :: "⠦" :: "⠧" :: "⠇" :: "⠏" :: frames
   in
   Lwd.prim
-    ~acquire:(fun () ->
+    ~acquire:(fun _self ->
       let running = ref true in
       let frame = Lwd.var frames in
       let rec next_frame () =
@@ -41,14 +28,14 @@ let spinner =
       in
       Lwt.async next_frame;
       (running, Lwd.get frame))
-    ~release:(fun (running, _) -> running := false)
+    ~release:(fun _self (running, _) -> running := false)
   |> Lwd.get_prim
-  |> Lwd.map (fun (_running, var) -> var)
+  |> Lwd.map ~f:(fun (_running, var) -> var)
   |> Lwd.join
-  |> Lwd.map List.hd
+  |> Lwd.map ~f:List.hd
 
 let ui =
-  let place_ui_var v = Lwd.(v |> get |> join |> map (Ui.resize ~w:0)) in
+  let place_ui_var v = Lwd.(v |> get |> join |> map ~f:(Ui.resize ~w:0)) in
   Lwd_utils.pack Ui.pack_y
     [ place_ui_var header; Lwd.get body |> Lwd.join; place_ui_var footer ]
 
@@ -81,10 +68,9 @@ let import_ci_ref ~vat = function
       | Some home ->
           let path = Filename.concat home ".ocaml-ci.cap" in
           if Sys.file_exists path then Capnp_rpc_unix.Cap_file.load vat path
-          else failwithf "Default cap file %S not found!" path )
+          else failwithf "Default cap file %S not found!" path)
 
 let log_file = Filename.temp_file "citty" ".log"
-
 let () = at_exit (fun () -> Sys.remove log_file)
 
 let open_in_editor refresh log_lines = function
@@ -100,8 +86,7 @@ let open_in_editor refresh log_lines = function
             match Sys.getenv_opt "EDITOR" with
             | Some x -> [ x ]
             | None -> (
-                match Sys.getenv_opt "PAGER" with Some x -> [ x ] | None -> [] )
-            )
+                match Sys.getenv_opt "PAGER" with Some x -> [ x ] | None -> []))
       in
       let candidates = candidates @ [ "xdg-open"; "open" ] in
       ignore
@@ -116,7 +101,7 @@ let rec show_job pane job =
   let dispatch, dispatch_var = Lwt.wait () in
   let open_editor_asap = ref false in
   let footer, set_footer =
-    let display msg = Lwd.map (fun img -> NW.string (img ^ msg)) spinner in
+    let display msg = Lwd.map ~f:(fun img -> NW.string (img ^ msg)) spinner in
     let var = Lwd.var (display " Receiving log") in
     let footer_content = function
       | `Opening -> display " Opening editor as soon as possible"
@@ -134,11 +119,11 @@ let rec show_job pane job =
         if (not !open_editor_asap) && action = `Activate then (
           open_editor_asap := true;
           set_footer `Opening;
-          Lwt.ignore_result (Lwt.map (fun fn -> fn `Activate) dispatch) )
+          Lwt.ignore_result (Lwt.map (fun fn -> fn `Activate) dispatch))
   in
   Pane.set pane (Some dispatch_fun)
-    (Lwd.map' footer
-       (Ui.resize ~sh:1 ~fill:(Gravity.make ~h:`Negative ~v:`Positive)));
+    (Lwd.map footer
+       ~f:(Ui.resize ~sh:1 ~pad:(Gravity.make ~h:`Negative ~v:`Positive)));
   let status = Current_rpc.Job.status job in
   let start_log = Current_rpc.Job.log ~start:0L job in
   status
@@ -150,25 +135,25 @@ let rec show_job pane job =
      in
      let buttons = Lwd.var Ui.empty in
      [
-       ( if can_rebuild then
-         Some
-           ( W.button Notty.A.(bg red) "[Rebuild]" @@ fun () ->
-             Lwd.set buttons Ui.empty;
-             ignore (show_job pane (Current_rpc.Job.rebuild job)) )
-       else None );
-       ( if can_cancel then
-         Some
-           ( W.button Notty.A.(bg blue) "[Cancel]" @@ fun () ->
-             Lwd.set buttons Ui.empty;
-             Lwt.async (fun () ->
-                 Current_rpc.Job.cancel job >>= fun _ ->
-                 ignore (show_job pane job);
-                 Lwt.return_unit) )
-       else None );
+       (if can_rebuild then
+        Some
+          ( W.button Notty.A.(bg red) "[Rebuild]" @@ fun () ->
+            Lwd.set buttons Ui.empty;
+            ignore (show_job pane (Current_rpc.Job.rebuild job)) )
+       else None);
+       (if can_cancel then
+        Some
+          ( W.button Notty.A.(bg blue) "[Cancel]" @@ fun () ->
+            Lwd.set buttons Ui.empty;
+            Lwt.async (fun () ->
+                Current_rpc.Job.cancel job >>= fun _ ->
+                ignore (show_job pane job);
+                Lwt.return_unit) )
+       else None);
      ]
      |> filter_map (fun x -> x)
      |> interleave (Ui.atom (Notty.I.void 1 0))
-     |> Lwd_utils.pure_pack Ui.pack_x
+     |> Lwd_utils.reduce Ui.pack_x
      |> Lwd.set buttons;
      let log_lines = Lwd_table.make () in
      Lwt.async (fun () ->
@@ -191,7 +176,7 @@ let rec show_job pane job =
      let description = Lwd.pure (text |> NW.string |> Ui.resize ~w:0 ~sw:1) in
      let buttons =
        Lwd.map2
-         (fun x y -> Ui.resize ~w:0 ~sw:1 (Ui.join_x x y))
+         ~f:(fun x y -> Ui.resize ~w:0 ~sw:1 (Ui.join_x x y))
          (Lwd.get buttons)
          (Lwd.pure (Ui.resize Ui.empty ~h:1 ~sw:1 ~bg:Notty.A.(bg (gray 1))))
      in
@@ -214,24 +199,25 @@ let rec show_job pane job =
        in
        let text_body =
          W.dynamic_width ~w:0 ~sw:1 ~h:0 ~sh:1 (fun width ->
-             Lwd.bind width (W.word_wrap_string_table log_lines)
+             Lwd.bind width ~f:(W.word_wrap_string_table log_lines)
              |> NW.vscroll_area ~state:(Lwd.get scroll_state) ~change:set_scroll
              |> (* Scroll when dragging *)
              Lwd.map
-               (Ui.mouse_area (fun ~x:_ ~y:y0 -> function
-                  | `Left ->
-                      let st = Lwd.peek scroll_state in
-                      `Grab
-                        ( (fun ~x:_ ~y:y1 ->
-                            let position = st.position + y0 - y1 in
-                            let position = clampi 0 st.bound position in
-                            set_scroll `Change { st with position }),
-                          fun ~x:_ ~y:_ -> () )
-                  | _ -> `Unhandled)))
+               ~f:
+                 (Ui.mouse_area (fun ~x:_ ~y:y0 -> function
+                    | `Left ->
+                        let st = Lwd.peek scroll_state in
+                        `Grab
+                          ( (fun ~x:_ ~y:y1 ->
+                              let position = st.position + y0 - y1 in
+                              let position = clampi 0 st.bound position in
+                              set_scroll `Change { st with position }),
+                            fun ~x:_ ~y:_ -> () )
+                    | _ -> `Unhandled)))
        in
        let scroll_bar =
          Lwd.get scroll_state
-         |> Lwd.map (fun x ->
+         |> Lwd.map ~f:(fun x ->
                 x
                 |> W.vertical_scrollbar ~set_scroll:(set_scroll `Change)
                 |> Ui.resize ~w:1 ~sw:0 ~h:0 ~sh:1)
@@ -254,7 +240,7 @@ let show_jobs commit pane =
                Pane.set pane None (Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e))
            | Error `No_job ->
                Pane.set pane None (Lwd.pure (NW.string "No jobs")))
-      and render Client.{ variant; outcome } highlight =
+      and render Client.{ variant; outcome; _ } highlight =
         Ui.hcat
           [
             render_state highlight outcome;
@@ -271,14 +257,14 @@ let show_jobs commit pane =
 let show_repo repo pane =
   Client.Repo.refs repo >>= function
   | Ok refs ->
-      let select (_, (hash, _status)) =
+      let select (_, Client.Repo.{ hash; _ }) =
         let pane = Pane.open_subview pane in
         Pane.set pane None (Lwd.pure (NW.string "..."));
         Lwt.async (fun () ->
             let commit = Client.Repo.commit_of_hash repo hash in
             show_jobs commit pane)
       in
-      let render (gref, (hash, _status)) highlight =
+      let render (gref, Client.Repo.{ hash; _ }) highlight =
         render_list_item highlight
           (Printf.sprintf "%10s   #%s" (W.fit_string gref 24)
              (String.sub hash 0 6))
@@ -292,9 +278,9 @@ let show_repo repo pane =
       Pane.set pane None (Lwd.pure (NW.fmt "%a" Capnp_rpc.Error.pp e));
       Lwt.return_unit
 
-let show_repos pane =
+let show_repos pane ~ci_uri =
   let vat = Capnp_rpc_unix.client_only_vat () in
-  match import_ci_ref ~vat None with
+  match import_ci_ref ~vat ci_uri with
   | Error _ as e -> Lwt.return e
   | Ok sr -> (
       let host = Uri.host_with_default (Capnp_rpc_unix.Vat.export vat sr) in
@@ -328,7 +314,7 @@ let show_repos pane =
                    (function
                      | Error e -> [ Error e ]
                      | Ok repos ->
-                         let handle_of { Client.Org.name; master_status = _ } =
+                         let handle_of { Client.Org.name; _ } =
                            Ok ((org, name), Client.Org.repo handle name)
                          in
                          List.map handle_of repos)
@@ -338,9 +324,9 @@ let show_repos pane =
           let items = List.flatten items in
           let ui, dispatch = W.list_box ~items ~render ~select in
           Pane.set pane (Some dispatch) ui;
-          Lwt.return_ok () )
+          Lwt.return_ok ())
 
-let main () =
+let main () ci_uri =
   let pane = Pane.make () in
   let dispatch pos action =
     match Pane.current_view pane pos with
@@ -350,14 +336,14 @@ let main () =
         | None -> `Unhandled
         | Some dispatch ->
             dispatch action;
-            `Handled )
+            `Handled)
   in
   let focus_handle = Focus.make () in
   Focus.request focus_handle;
   Lwd.set body
-    ( Pane.render pane
+    (Pane.render pane
     |> Lwd.map2
-         (fun focus ->
+         ~f:(fun focus ->
            Ui.keyboard_area ~focus @@ function
            | (`Arrow `Up | `ASCII 'k'), [] -> dispatch `Middle `Select_prev
            | (`Arrow `Down | `ASCII 'j'), [] -> dispatch `Middle `Select_next
@@ -365,9 +351,9 @@ let main () =
            | (`Arrow `Right | `ASCII 'l'), [] -> dispatch `Right `Activate
            | (`Escape | `ASCII 'q'), [] -> exit 0
            | _ -> `Unhandled)
-         (Focus.status focus_handle) );
+         (Focus.status focus_handle));
   Lwt_main.run
-    (show_repos (Pane.open_root pane) >>= function
+    (show_repos (Pane.open_root pane) ~ci_uri >>= function
      | Ok () -> Nottui_lwt.run ui
      | Error (`Capnp err) ->
          Format.eprintf "%a" Capnp_rpc.Error.pp err;
@@ -376,4 +362,24 @@ let main () =
          Format.eprintf "Error: %S" msg;
          Lwt.return_unit)
 
-let () = main ()
+let setup_log style_renderer level =
+  Fmt_tty.setup_std_outputs ?style_renderer ();
+  Logs.set_level level;
+  Logs.set_reporter (Logs_fmt.reporter ());
+  ()
+
+(* Command line interface *)
+
+open Cmdliner
+
+let setup_log =
+  Term.(const setup_log $ Fmt_cli.style_renderer () $ Logs_cli.level ())
+
+let cap =
+  Arg.value
+  @@ Arg.opt Arg.(some Capnp_rpc_unix.sturdy_uri) None
+  @@ Arg.info ~doc:"The ocaml-ci.cap file. Defaults to $(i,~/.ocaml-ci.cap)."
+       ~docv:"CAP" [ "ci-cap" ]
+
+let main = Term.(const main $ setup_log $ cap)
+let () = exit @@ Cmd.(eval (v (info "citty") main))
