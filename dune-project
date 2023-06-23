@@ -5,6 +5,7 @@
 (generate_opam_files true)
 (source (github ocaml-ci/citty))
 (authors "Frédéric Bour")
+(maintainers "Navin Keswani <navin@novemberkilo.io>" "Tim McGilchrist <timmcgil@gmail.com>")
 (license "MIT")
 
 (package
